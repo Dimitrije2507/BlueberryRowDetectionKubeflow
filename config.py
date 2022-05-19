@@ -8,7 +8,7 @@ import pandas as pd
 #######################
 
 # bool
-server = True       # Flag that indicates whether to use server or local machine
+server = False       # Flag that indicates whether to use server or local machine
 
 load_numpy = True   # Flag that indicates what type of data we use as input
 
