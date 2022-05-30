@@ -33,7 +33,7 @@ def set_seed(seed):
     return torch_manual_seed, torch_manual_seed_cuda
 
 def main(lambda_parametri, stepovi, lr,p_index):
-    
+    print("promena")
     tmp = get_args('train')
     globals().update(tmp)
     base_folder_path = os.getcwd()
