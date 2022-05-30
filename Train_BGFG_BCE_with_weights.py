@@ -45,7 +45,7 @@ def main(lambda_parametri, stepovi, lr,p_index):
     ### data loading ###
     ####################
     
-    train_loader, valid_loader = data_loading(ime_foldera_za_upis,numpy_path,numpy_valid_path,binary)
+    train_loader, valid_loader = data_loading(ime_foldera_za_upis,numpy_path,numpy_valid_path,binary,background_flag)
 
     ####################
     after_data_loading_prints(lr,ime_foldera_za_upis,train_loader,valid_loader)
@@ -59,7 +59,9 @@ def main(lambda_parametri, stepovi, lr,p_index):
     ############################
 
     segmentation_net = model_init(num_channels,num_channels_lab,img_h,img_w,zscore,net_type,device,server,GPU_list)
-
+    segmentation_net = torch.nn.DataParallel(segmentation_net, device_ids=[0]).to(device)
+    
+    print(summary(segmentation_net,(4,512,512)))
     ############################
     ### model initialization ###
     ############################
@@ -70,7 +72,7 @@ def main(lambda_parametri, stepovi, lr,p_index):
     ### Loss initialization ###
     ############################
 
-    criterion = loss_init(use_weights,loss_type,dataset,num_channels_lab,device)
+    criterion = loss_init(use_weights,loss_type,dataset,num_channels_lab,device,year)
 
     if server:
         start_train = torch.cuda.Event(enable_timing=True)
@@ -81,7 +83,7 @@ def main(lambda_parametri, stepovi, lr,p_index):
     # Brojanje Iteracija
     global count_train
     global count_val
-    global es_min 
+    global es_min   
     global epoch_model_last_save
     epoch_list = np.zeros([epochs])
     all_train_losses = np.zeros([epochs])
@@ -100,8 +102,11 @@ def main(lambda_parametri, stepovi, lr,p_index):
             torch.cuda.empty_cache()
         
         index_start = 0
+        
         batch_iou = torch.zeros(size=(len(train_loader.dataset.img_names),num_channels_lab*2),device=device,dtype=torch.float32)
-        batch_iou_bg = torch.zeros(size=(len(train_loader.dataset.img_names),2),device=device,dtype=torch.float32)
+        if loss_type == 'bce':
+            batch_iou_bg = torch.zeros(size=(len(train_loader.dataset.img_names),2),device=device,dtype=torch.float32)
+        
 
         for input_var, target_var, batch_names_train, mask_train in train_loader:
         
@@ -109,7 +114,7 @@ def main(lambda_parametri, stepovi, lr,p_index):
 
             model_output = segmentation_net.forward(input_var)
             mask_train = torch.logical_and(mask_train[:,0,:,:],mask_train[:,1,:,:])
-            loss = loss_calc(loss_type,criterion,model_output,target_var,mask_train,use_mask)
+            loss = loss_calc(loss_type,criterion,model_output,target_var,mask_train,num_channels_lab,use_mask)
             loss.backward()
 
             optimizer.step()  # mnozi sa grad i menja weightove
@@ -119,9 +124,14 @@ def main(lambda_parametri, stepovi, lr,p_index):
             ######## update!!!!
             
             index_end = index_start + len(batch_names_train)
-            batch_iou[index_start:index_end, :],batch_iou_bg[index_start:index_end]= calc_metrics_pix(model_output, target_var,mask_train, num_channels_lab,device,use_mask)
+            if loss_type == 'bce':
+                batch_iou[index_start:index_end, :],batch_iou_bg[index_start:index_end]= calc_metrics_pix(model_output, target_var,mask_train, num_channels_lab,device,use_mask,loss_type)
+            elif loss_type == 'ce':
+                batch_iou[index_start:index_end, :]= calc_metrics_pix(model_output, target_var,mask_train, num_channels_lab, device, use_mask,loss_type)
+            else:
+                print("Error: unimplemented loss type")
+                sys.exit(0)
             index_start += len(batch_names_train)
-
             ###########################################################
             ### iscrtavanje broja klasa i broja piskela i tako toga ###
             ###########################################################
@@ -136,7 +146,7 @@ def main(lambda_parametri, stepovi, lr,p_index):
             #########################################################################
 
             tb_image_list_plotting(tb, tb_img_list, num_channels_lab, epoch, input_var, target_var,\
-                 mask_train, model_output, train_part, device, batch_names_train,use_mask,dataset)
+                 mask_train, model_output, train_part, device, batch_names_train,use_mask,dataset,loss_type,year)
         
             count_train += 1
             print("*", end="")
@@ -144,10 +154,16 @@ def main(lambda_parametri, stepovi, lr,p_index):
         #########################################################
         ### Racunanje finalne metrike nad celim trening setom ###
         #########################################################
+        if loss_type == 'bce':
+            final_metric_calculation(tensorbd=tb,loss_type = loss_type,epoch=epoch,num_channels_lab=num_channels_lab,classes_labels = classes_labels,\
+                batch_iou_bg=batch_iou_bg,batch_iou=batch_iou,train_part= train_part,ime_foldera_za_upis=ime_foldera_za_upis)
+        elif loss_type == 'ce':
+            final_metric_calculation(tensorbd=tb,loss_type = loss_type,epoch=epoch,num_channels_lab=num_channels_lab,classes_labels = classes_labels,\
+                batch_iou=batch_iou,train_part= train_part,ime_foldera_za_upis=ime_foldera_za_upis)
+        else:
+            print("Error: Unimplemented loss type!")
+            sys.exit(0)
 
-        final_metric_calculation(tensorbd=tb,epoch=epoch,num_channels_lab=num_channels_lab,classes_labels = classes_labels,\
-            batch_iou_bg=batch_iou_bg,batch_iou=batch_iou,train_part= train_part,ime_foldera_za_upis=ime_foldera_za_upis)
-        
         if server:
             end_train.record()
             torch.cuda.synchronize()
@@ -177,18 +193,26 @@ def main(lambda_parametri, stepovi, lr,p_index):
         index_start = 0
         
         batch_iou = torch.zeros(size=(len(valid_loader.dataset.img_names),num_channels_lab*2),device=device,dtype=torch.float32)
-        batch_iou_bg = torch.zeros(size=(len(valid_loader.dataset.img_names),2),device=device,dtype=torch.float32)
+        if loss_type == 'bce':
+            batch_iou_bg = torch.zeros(size=(len(valid_loader.dataset.img_names),2),device=device,dtype=torch.float32)
 
         for input_var, target_var, batch_names_valid, mask_val in valid_loader:
 
             model_output = segmentation_net.forward(input_var)
             mask_val = torch.logical_and(mask_val[:,0,:,:],mask_val[:,1,:,:])
-            val_loss = loss_calc(loss_type,criterion,model_output,target_var,mask_val, use_mask)
+            val_loss = loss_calc(loss_type,criterion,model_output,target_var,mask_val, num_channels_lab ,use_mask)
 
             validation_losses.append(val_loss.data)
 
             index_end = index_start + len(batch_names_valid)
-            batch_iou[index_start:index_end, :], batch_iou_bg[index_start:index_end]= calc_metrics_pix(model_output, target_var,mask_val, num_channels_lab,device,use_mask)
+            if loss_type == 'bce':
+                batch_iou[index_start:index_end, :], batch_iou_bg[index_start:index_end]= calc_metrics_pix(model_output, target_var,mask_val, num_channels_lab,device,use_mask,loss_type)
+            elif loss_type == 'ce':
+                batch_iou[index_start:index_end, :]= calc_metrics_pix(model_output, target_var,mask_val, num_channels_lab, device, use_mask,loss_type)
+            else:
+                print("Error: unimplemented loss type")
+                sys.exit(0)
+
             index_start += len(batch_names_valid)
 
             ##############################################################################
@@ -196,7 +220,7 @@ def main(lambda_parametri, stepovi, lr,p_index):
             ##############################################################################
 
             tb_image_list_plotting(tb, tb_img_list, num_channels_lab, epoch, input_var, target_var,\
-                 mask_val, model_output, train_part, device, batch_names_valid,use_mask,dataset)
+                 mask_val, model_output, train_part, device, batch_names_valid,use_mask,dataset,loss_type,year)
 
             count_val += 1
             print("*", end="")
@@ -206,9 +230,15 @@ def main(lambda_parametri, stepovi, lr,p_index):
         ##############################################################
         ### Racunanje finalne metrike nad celim validacionim setom ###
         ##############################################################
-
-        final_metric_calculation(tensorbd=tb,epoch=epoch,num_channels_lab=num_channels_lab,classes_labels = classes_labels,\
-            batch_iou_bg=batch_iou_bg,batch_iou=batch_iou,train_part= train_part,ime_foldera_za_upis=ime_foldera_za_upis)
+        if loss_type == 'bce':
+            final_metric_calculation(tensorbd=tb,loss_type = loss_type, epoch=epoch,num_channels_lab=num_channels_lab,classes_labels = classes_labels,\
+                batch_iou_bg=batch_iou_bg,batch_iou=batch_iou,train_part= train_part,ime_foldera_za_upis=ime_foldera_za_upis)
+        elif loss_type == 'ce':
+            final_metric_calculation(tensorbd=tb,loss_type = loss_type,epoch=epoch,num_channels_lab=num_channels_lab,classes_labels = classes_labels,\
+                batch_iou=batch_iou,train_part= train_part,ime_foldera_za_upis=ime_foldera_za_upis)
+        else:
+            print("Error: Unimplemented loss type!")
+            sys.exit(0)
 
         if server:
             end_val.record()
@@ -230,7 +260,7 @@ def main(lambda_parametri, stepovi, lr,p_index):
         tb_add_epoch_losses(tb,train_losses,validation_losses,epoch)
         
         early_stop = early_stopping(epoch, val_loss_es, all_validation_losses, es_check, \
-            segmentation_net, save_model_path, save_checkpoint_freq, ime_foldera_za_upis,es_min,epoch_model_last_save,es_epoch_count,save_best_model)
+            segmentation_net, save_model_path, save_checkpoint_freq, ime_foldera_za_upis,es_min,epoch_model_last_save,es_epoch_count,save_best_model,early_stop_flag)
         if early_stop:
             break
 
@@ -255,31 +285,33 @@ def main(lambda_parametri, stepovi, lr,p_index):
         criterion_1 = criterion
         
         test_loader = AgroVisionDataLoader(img_size, numpy_test_path, img_data_format, shuffle_state,
-                                           batch_size, device, zscore,binary,dataset)
+                                           batch_size, device, zscore,binary,dataset,background_flag)
         uporedna_tabela = pd.DataFrame()
         IOU = run_testing(segmentation_net, test_loader, ime_foldera_za_upis, device, num_channels_lab, classes_labels,classes_labels2,
                      criterion_1, loss_type, tb, zscore)
 
     end_prints(ime_foldera_za_upis)
-    return IOU
+    # return IOU
     # VISUALIZE TENSORBOARD
     ## tensorboard dev upload --logdir=logs/Test_Overfit
     # # tensorboard --logdir=logs/Train_BCE_with_weights --host localhost
 
 if __name__ == '__main__':
 
-    lr = [1e-2,1e-3,1e-4] 
+    # lr = [1e-2,1e-3,1e-4]
+    lr = [1e-3] 
     lambda_parametar = [1]
     stepovi_arr = [5]
     # classes_labels2 = ['background','foreground']
-    classes_labels2 = ['background','cloud_shadow','double_plant','planter_skip','standing_water','waterway','weed_cluster']
+    # classes_labels2 = ['background','cloud_shadow','double_plant','planter_skip','standing_water','waterway','weed_cluster']
     uporedna_tabela = pd.DataFrame()
-    for p_index in range(1): # petlja kojom ispitujemo ponovljivost istog eksperimenta, p_idex - broj trenutne iteracije
+    param_ponovljivosti = 1
+    for p_index in range(param_ponovljivosti): # petlja kojom ispitujemo ponovljivost istog eksperimenta, p_idex - broj trenutne iteracije
         for step_index in range(len(stepovi_arr)): # petlja kojom ispitujemo kako se trening menja za razlicite korake promene lr-a, step = broj iteracija nakon kojeg ce se odraditi scheduler.step(loss)
             for lambd_index in range(len(lambda_parametar)):  # petlja kojom ispitujemo kako se trening menja za razlicite labmda parametre kojim mnozimo lr kada dodje do ispunjavanja uslova za scheduler.step(loss)
                 for lr_index in range(len(lr)): # petlja kojom ispitujemo kako se trening menja za razlicite lr-ove
-                    IOU = main(lambda_parametar[lambd_index], stepovi_arr[step_index],lr[lr_index],p_index)
-        uporedna_tabela['TestSet IoU Metric '+str(p_index)] = IOU
+                    main(lambda_parametar[lambd_index], stepovi_arr[step_index],lr[lr_index],p_index)
+        # uporedna_tabela['TestSet IoU Metric '+str(p_index)] = IOU
         
-    uporedna_tabela = uporedna_tabela.set_axis(classes_labels2).T                
-    uporedna_tabela.to_csv("Weighted BCE without background class, mini dataset, BGFG lr 1e-3 1 epochs.csv")
+    # uporedna_tabela = uporedna_tabela.set_axis(classes_labels2).T                
+    # uporedna_tabela.to_csv("Weighted BCE without background class, mini dataset, BGFG lr 1e-3 1 epochs.csv")

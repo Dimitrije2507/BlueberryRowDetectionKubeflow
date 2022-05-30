@@ -4,20 +4,21 @@ import os,sys,time
 from data_utils import upisivanje
 ##### train mean iou classwise promeniti da bude opste, posto treba i za valid
 
-def final_metric_calculation(tensorbd='None',epoch=0,num_channels_lab = 1,classes_labels ='None',batch_iou_bg='None',batch_iou='None',train_part= 'Test',ime_foldera_za_upis='None'):
+def final_metric_calculation(tensorbd='None',loss_type = 'bce',epoch=0,num_channels_lab = 1,classes_labels ='None',batch_iou_bg='None',batch_iou='None',train_part= 'Test',ime_foldera_za_upis='None'):
     index_miou = 0  
     IOU = list() 
-    iou_int_bg = batch_iou_bg[:,0]
-    iou_un_bg = batch_iou_bg[:,1]
-    iou_calc_bg = torch.div(torch.sum(iou_int_bg),torch.sum(iou_un_bg))
-    if train_part == 'Test':
-        ispis = train_part + " Mean IOU Classwise/" + "Background" + " "+str(np.round(iou_calc_bg.detach().cpu(), 4))
-        IOU.append(np.round(iou_calc_bg.detach().cpu().numpy(), 4))
-        print(ispis)
-        upisivanje(ispis, ime_foldera_za_upis)
-    else:
-        ispis = train_part + " Mean IOU Classwise/" + "Background" + " "
-        tensorbd.add_scalar(ispis, np.round(iou_calc_bg.detach().cpu(), 4), epoch)
+    if loss_type == 'bce':
+        iou_int_bg = batch_iou_bg[:,0]
+        iou_un_bg = batch_iou_bg[:,1]
+        iou_calc_bg = torch.div(torch.sum(iou_int_bg),torch.sum(iou_un_bg))
+        if train_part == 'Test':
+            ispis = train_part + " Mean IOU Classwise/" + "Background" + " "+str(np.round(iou_calc_bg.detach().cpu(), 4))
+            IOU.append(np.round(iou_calc_bg.detach().cpu().numpy(), 4))
+            print(ispis)
+            upisivanje(ispis, ime_foldera_za_upis)
+        else:
+            ispis = train_part + " Mean IOU Classwise/" + "Background" + " "
+            tensorbd.add_scalar(ispis, np.round(iou_calc_bg.detach().cpu(), 4), epoch)
     
     for klasa in range(num_channels_lab):
         
@@ -56,27 +57,36 @@ def iou_pix(target, pred, mask_var, use_mask):
             union = torch.logical_or(target.bool(), pred.bool()).sum() 
             return intersection , union 
         
-def calc_metrics_pix(model_output, target_var, mask_var, num_classes,device,use_mask):
+def calc_metrics_pix(model_output, target_var, mask_var, num_classes,device,use_mask,loss_type):
 
     iou_res = torch.zeros((target_var.shape[0], target_var.shape[1] * 2),device=device)
-    iou_res_bg = torch.zeros((target_var.shape[0], 2),device=device)
+    if loss_type == 'bce':
+        iou_res_bg = torch.zeros((target_var.shape[0], 2),device=device)
     for im_number in range(target_var.shape[0]):
         
         tresholded = model_output[im_number, :, :, :]>0.5
         tresholded = tresholded.byte()
         tresholded_tmp = torch.max(tresholded,dim = 0).values
-        bg_tresholded = torch.tensor(tresholded_tmp == 0).byte()
-        bg_target_var = torch.max(target_var[im_number,:,:,:],dim = 0).values
-        bg_target_var = torch.tensor(bg_target_var == 0).byte()
-        iou_res_bg[ im_number, 0], iou_res_bg[ im_number, 1] = iou_pix( bg_target_var, bg_tresholded, mask_var[im_number],use_mask)
+        if loss_type=='bce':
+            # bg_tresholded = torch.tensor(tresholded_tmp == 0).byte()
+            bg_tresholded = (tresholded_tmp==0)
+            bg_target_var = torch.max(target_var[im_number,:,:,:],dim = 0).values
+            bg_target_var = (bg_target_var==0)
+            # bg_target_var = torch.tensor(bg_target_var == 0).byte()
+            iou_res_bg[ im_number, 0], iou_res_bg[ im_number, 1] = iou_pix( bg_target_var, bg_tresholded, mask_var[im_number],use_mask)
         
         ind_iou = 0
         for klasa_idx in range(num_classes):
 
             iou_res[im_number, ind_iou], iou_res[im_number, ind_iou + 1] = iou_pix(target_var[im_number, klasa_idx, :, :], tresholded[klasa_idx,:,:],mask_var[im_number],use_mask)
             ind_iou += 2
-           
-    return iou_res,iou_res_bg
+    if loss_type =='ce':       
+        return iou_res
+    elif loss_type == 'bce':
+        return iou_res,iou_res_bg
+    else:
+        print("Error: Unimplemented loss type")
+        sys.exit(0)
 
 
 def calc_metrics_tb(model_output, target_var, mask_var, num_classes,use_mask):

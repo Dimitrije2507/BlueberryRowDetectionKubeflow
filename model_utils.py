@@ -3,7 +3,8 @@ import torch
 import numpy as np
 import pandas as pd
 import cv2
-import os
+import os,sys
+
 from metrics_utils import *
 from data_utils import *
 from loss_utils import *
@@ -49,7 +50,7 @@ def optimizer_init(segmentation_net,lr,weight_decay,scheduler_lr,lambda_parametr
 
     return optimizer , scheduler
 
-def early_stopping(epoch,val_loss_es,all_validation_losses,es_check,segmentation_net, save_model_path, save_checkpoint_freq,ime_foldera_za_upis,es_min,epoch_model_last_save,es_epoch_count,save_best_model):
+def early_stopping(epoch,val_loss_es,all_validation_losses,es_check,segmentation_net, save_model_path, save_checkpoint_freq,ime_foldera_za_upis,es_min,epoch_model_last_save,es_epoch_count,save_best_model,early_stop):
     val_loss_es[epoch] = all_validation_losses[epoch]
     if val_loss_es[epoch]< es_min:
         es_min = val_loss_es[epoch]
@@ -63,7 +64,7 @@ def early_stopping(epoch,val_loss_es,all_validation_losses,es_check,segmentation
     
     
     if save_best_model:
-        torch.save(segmentation_net, (save_model_path + 'trained_model_best_epoch' + str(epoch) + ".pt"))
+        torch.save(segmentation_net.module.state_dict(), (save_model_path + 'trained_model_best_epoch' + str(epoch) + ".pt"))
         if os.path.exists(save_model_path + 'trained_model_best_epoch' + str(int(epoch_model_last_save)) + ".pt"):
             os.remove(save_model_path + 'trained_model_best_epoch' + str(int(epoch_model_last_save)) + ".pt")
         epoch_model_last_save = int(epoch / save_checkpoint_freq)
@@ -73,10 +74,10 @@ def early_stopping(epoch,val_loss_es,all_validation_losses,es_check,segmentation
     ####################################
     ###### Provera ponovljivosti #######
     ####################################
-    early_stop = False
+    # early_stop = False
 
     if early_stop:
-        torch.save(segmentation_net, (save_model_path + 'trained_model_ES_epoch' + str(epoch) + ".pt"))
+        torch.save(segmentation_net.module.state_dict(), (save_model_path + 'trained_model_ES_epoch' + str(epoch) + ".pt"))
         if os.path.exists(save_model_path + 'trained_model_epoch' + str(int(epoch_model_last_save)) + ".pt"):
             os.remove(save_model_path + 'trained_model_epoch' + str(int(epoch_model_last_save)) + ".pt")
         epoch_model_last_save = int(epoch / save_checkpoint_freq)
@@ -86,7 +87,7 @@ def early_stopping(epoch,val_loss_es,all_validation_losses,es_check,segmentation
         return early_stop
 
     if (epoch / save_checkpoint_freq).is_integer():
-        torch.save(segmentation_net, (save_model_path + 'trained_model_epoch' + str(epoch) + ".pt"))
+        torch.save(segmentation_net.module.state_dict(), (save_model_path + 'trained_model_epoch' + str(epoch) + ".pt"))
         if os.path.exists(save_model_path + 'trained_model_epoch' + str(int(epoch_model_last_save)) + ".pt"):
             os.remove(save_model_path + 'trained_model_epoch' + str(int(epoch_model_last_save)) + ".pt")
         epoch_model_last_save = int(epoch / save_checkpoint_freq)
@@ -98,7 +99,7 @@ def early_stopping(epoch,val_loss_es,all_validation_losses,es_check,segmentation
 
 
 def fully_trained_model_saving(segmentation_net,save_model_path,epoch,ime_foldera_za_upis):
-    torch.save(segmentation_net, save_model_path + 'fully_trained_model_epochs_' + str(epoch) + ".pt")
+    torch.save(segmentation_net.module.state_dict(), save_model_path + 'fully_trained_model_epochs_' + str(epoch) + ".pt")
     if os.path.exists(save_model_path + 'trained_model_epoch' + str(int(epoch)) + ".pt"):
         os.remove(save_model_path + 'trained_model_epoch' + str(int(epoch)) + ".pt")
         model_name = save_model_path + 'fully_trained_model_epochs_' + str(epoch) + ".pt"
@@ -122,15 +123,23 @@ def run_testing(segmentation_net, test_loader, ime_foldera_za_upis, device, num_
     ###########################
     ### iscrtavanja legende ###
     ###########################
-    
-    tb.add_image("Classification legend ",np.moveaxis(cv2.cvtColor(cv2.imread(r"/home/stefanovicd/DeepSleep/agrovision/Legend_Classes.png"),cv2.COLOR_BGR2RGB),2,0),
-                            1, dataformats="CHW")
+    tmp = get_args('test')
+    globals().update(tmp)
+    if year == '2020':
+        tb.add_image("Classification legend ",np.moveaxis(cv2.cvtColor(cv2.imread(r"./Legend_Classes_2020_dataset.png"),cv2.COLOR_BGR2RGB),2,0),
+                                1, dataformats="CHW")
+    elif year == '2021':
+        tb.add_image("Classification legend ",np.moveaxis(cv2.cvtColor(cv2.imread(r"./Legend_Classes_2021_dataset.png"),cv2.COLOR_BGR2RGB),2,0),
+                                1, dataformats="CHW")
+    else:
+        print("Error: wrong year parameter or there is no dataset for that year")
+        sys.exit(0)
+
     ### segmentation_net = torch.load(segmentation_net)
     
     segmentation_net.eval()
 
-    tmp = get_args('test')
-    globals().update(tmp)
+    
     
     ispis = ("_____________________________________________________________Testing Start ")
     print(ispis)
@@ -138,7 +147,8 @@ def run_testing(segmentation_net, test_loader, ime_foldera_za_upis, device, num_
 
     index_start = 0
     iou_res = torch.zeros([len(test_loader.dataset.img_names), num_classes * 2])
-    iou_res_bg = torch.zeros([len(test_loader.dataset.img_names),2])
+    if loss_type == 'bce':
+        iou_res_bg = torch.zeros([len(test_loader.dataset.img_names),2])
     global test_losses
     for input_var, target_var, img_names_test, mask_test in test_loader:
         
@@ -146,13 +156,19 @@ def run_testing(segmentation_net, test_loader, ime_foldera_za_upis, device, num_
         model_output = segmentation_net(input_var)
         # racunanje loss-a
         mask_test = torch.logical_and(mask_test[:,0,:,:],mask_test[:,1,:,:])
-        test_loss = loss_calc(loss_type, criterion_1, model_output,target_var,mask_train=mask_test,use_mask= use_mask)
+        test_loss = loss_calc(loss_type, criterion_1, model_output,target_var,mask_train=mask_test,num_channels_lab = num_classes,use_mask= use_mask)
         # cuvanje loss-a kroz iteracije
         test_losses.append(test_loss.data)
         
         # izvlacenje iou i dice komponenti po batch-u za kasnije racunanje ukupnih metrika
         index_end = index_start + len(img_names_test)
-        iou_res[index_start:index_end, :], iou_res_bg[index_start:index_end] = calc_metrics_pix(model_output, target_var,mask_test, num_classes,device,use_mask)    
+        if loss_type == 'bce':
+            iou_res[index_start:index_end, :], iou_res_bg[index_start:index_end] = calc_metrics_pix(model_output, target_var,mask_test, num_classes,device,use_mask,loss_type)    
+        elif loss_type == 'ce':
+            iou_res[index_start:index_end, :] = calc_metrics_pix(model_output, target_var,mask_test, num_classes,device,use_mask,loss_type)    
+        else:
+            print("Error: Unimplemented loss type!")
+            sys.exit(0)
         index_start += len(img_names_test)
 
         if binary:
@@ -166,34 +182,119 @@ def run_testing(segmentation_net, test_loader, ime_foldera_za_upis, device, num_
                     class_area.append(target_var[target_idx, target_klasa].sum())
 
                 for target_klasa in torch.unique(torch.nonzero(torch.tensor(class_area))):
-                    # if j == 0:
-                    #     background_names.append(img_names_test[i])
-                    #     background_area.append(class_area[j])
-                    # el
-                    if target_klasa == 0:
-                        cloud_shadow_names.append(img_names_test[target_idx])
-                        cloud_shadow_area.append(class_area[target_klasa])
-                    elif target_klasa == 1:
-                        double_plant_names.append(img_names_test[target_idx])
-                        double_plant_area.append(class_area[target_klasa])
-                    elif target_klasa == 2:
-                        planter_skip_names.append(img_names_test[target_idx])
-                        planter_skip_area.append(class_area[target_klasa])
-                    elif target_klasa == 3:
-                        standing_water_names.append(img_names_test[target_idx])
-                        standing_water_area.append(class_area[target_klasa])
-                    elif target_klasa == 4:
-                        waterway_names.append(img_names_test[target_idx])
-                        waterway_area.append(class_area[target_klasa])
-                    elif target_klasa == 5:
-                        weed_cluster_names.append(img_names_test[target_idx])
-                        weed_cluster_area.append(class_area[target_klasa])
+                    counter = 0 
+                    if year == '2020':
+                        # ['background','cloud_shadow','double_plant','planter_skip','standing_water','waterway','weed_cluster']
+                        if background_flag:
+                            if target_klasa == counter:
+                                background_names.append(img_names_test[target_idx])
+                                background_area.append(class_area[target_klasa])
+                                continue
+                            else:
+                                counter+=1
+                        if target_klasa == counter:
+                            cloud_shadow_names.append(img_names_test[target_idx])
+                            cloud_shadow_area.append(class_area[target_klasa])
+                            continue
+                        else:
+                            counter+=1
+                        if target_klasa == counter:
+                            double_plant_names.append(img_names_test[target_idx])
+                            double_plant_area.append(class_area[target_klasa])
+                            continue
+                        else:
+                            counter+=1
+                        if target_klasa == counter:
+                            planter_skip_names.append(img_names_test[target_idx])
+                            planter_skip_area.append(class_area[target_klasa])
+                            continue
+                        else:
+                            counter+=1
+                        if target_klasa == counter:
+                            standing_water_names.append(img_names_test[target_idx])
+                            standing_water_area.append(class_area[target_klasa])
+                            continue
+                        else:
+                            counter+=1
+                        if target_klasa == counter:
+                            waterway_names.append(img_names_test[target_idx])
+                            waterway_area.append(class_area[target_klasa])
+                            continue
+                        else:
+                            counter+=1
+                        if target_klasa == counter:
+                            weed_cluster_names.append(img_names_test[target_idx])
+                            weed_cluster_area.append(class_area[target_klasa])
+                            continue
+                        else:
+                            counter+=1
+                        
+                        # else:
+                        #     print("Error: there is no labeled class in images!")
+                        #     print(torch.unique(torch.nonzero(torch.tensor(class_area))))
+                        #     sys.exit(0)
+                    elif year == '2021':
+                        # ["background","double_plant", "drydown", "endrow", "nutrient_deficiency", "planter_skip", "water", "waterway", "weed_cluster"]
+                        if background_flag:
+                            if target_klasa == counter:
+                                background_names.append(img_names_test[target_idx])
+                                background_area.append(class_area[target_klasa])
+                                continue
+                            else:
+                                counter+=1
+                        if target_klasa == counter:
+                            double_plant_names.append(img_names_test[target_idx])
+                            double_plant_area.append(class_area[target_klasa])
+                            continue
+                        else:
+                            counter+=1
+                        if target_klasa == counter:
+                            drydown_names.append(img_names_test[target_idx])
+                            drydown_area.append(class_area[target_klasa])
+                            continue
+                        else:
+                            counter+=1
+                        if target_klasa == counter:
+                            endrow_names.append(img_names_test[target_idx])
+                            endrow_area.append(class_area[target_klasa])
+                            continue
+                        else:
+                            counter+=1
+                        if target_klasa == counter:
+                            nutrient_deficiency_names.append(img_names_test[target_idx])
+                            nutrient_deficiency_area.append(class_area[target_klasa])
+                            continue
+                        else:
+                            counter+=1
+                        if target_klasa == counter:
+                            planter_skip_names.append(img_names_test[target_idx])
+                            planter_skip_area.append(class_area[target_klasa])
+                            continue
+                        else:
+                            counter+=1
+                        if target_klasa == counter:
+                            water_names.append(img_names_test[target_idx])
+                            water_area.append(class_area[target_klasa])
+                            continue
+                        else:
+                            counter+=1
+                        if target_klasa == counter:
+                            waterway_names.append(img_names_test[target_idx])
+                            waterway_area.append(class_area[target_klasa])
+                            continue
+                        else:
+                            counter+=1
+                        if target_klasa == counter:
+                            weed_cluster_names.append(img_names_test[target_idx])
+                            weed_cluster_area.append(class_area[target_klasa])
+                            continue
+                        else:
+                            counter+=1
                     else:
-                        print("Error: there is no labeled class in images!")
-                        print(torch.unique(torch.nonzero(torch.tensor(class_area))))
+                        print("Error: there is no dataset from year " + year)
                         sys.exit(0)
         
-    tb.add_figure("Confusion matrix", createConfusionMatrix(test_loader,segmentation_net,classes_labels2),0)
+    tb.add_figure("Confusion matrix", createConfusionMatrix(test_loader,segmentation_net,classes_labels2,loss_type),0)
 
     test_losses = torch.tensor(test_losses,dtype = torch.float32)
     # mean Test loss-ova
@@ -206,10 +307,19 @@ def run_testing(segmentation_net, test_loader, ime_foldera_za_upis, device, num_
     ###################################################################
     
     iou_res = torch.tensor(iou_res,dtype = torch.float32,device=device)
-    iou_res_bg = torch.tensor(iou_res_bg,dtype = torch.float32,device= device)
+    if loss_type == 'bce':
+        iou_res_bg = torch.tensor(iou_res_bg,dtype = torch.float32,device= device)
     
-    IOU = final_metric_calculation(num_channels_lab=num_classes,classes_labels=classes_labels,\
-        batch_iou_bg=iou_res_bg,batch_iou= iou_res,train_part='Test',ime_foldera_za_upis=ime_foldera_za_upis)
+    if loss_type == 'bce':
+        IOU = final_metric_calculation(loss_type = loss_type, num_channels_lab=num_classes,classes_labels=classes_labels,\
+            batch_iou_bg=iou_res_bg,batch_iou= iou_res,train_part='Test',ime_foldera_za_upis=ime_foldera_za_upis)
+    elif loss_type == 'ce':
+        IOU = final_metric_calculation(loss_type = loss_type,num_channels_lab=num_classes,classes_labels=classes_labels,\
+            batch_iou= iou_res,train_part='Test',ime_foldera_za_upis=ime_foldera_za_upis)
+    else:
+        print("Error: Unimplemented loss_type!")
+        sys.exit(0)
+
     FinalTabela = pd.DataFrame()
     FinalTabela['TestSet IoU Metric'] = IOU
     FinalTabela = FinalTabela.set_axis(classes_labels2).T
@@ -242,20 +352,62 @@ def run_testing(segmentation_net, test_loader, ime_foldera_za_upis, device, num_
 
                 index_iou += 2
             try:
-                # if test_loader.dataset.img_names[im_number] in background_names:
-                #     iou_per_test_image_bg.append(iou_tmp[0])
-                if test_loader.dataset.img_names[im_number] in cloud_shadow_names:
-                    iou_per_test_image_cs.append(iou_tmp[0])
-                if test_loader.dataset.img_names[im_number] in double_plant_names:
-                    iou_per_test_image_dp.append(iou_tmp[1])
-                if test_loader.dataset.img_names[im_number] in planter_skip_names:
-                    iou_per_test_image_ps.append(iou_tmp[2])
-                if test_loader.dataset.img_names[im_number] in standing_water_names:
-                    iou_per_test_image_sw.append(iou_tmp[3])
-                if test_loader.dataset.img_names[im_number] in waterway_names:
-                    iou_per_test_image_ww.append(iou_tmp[4])
-                if test_loader.dataset.img_names[im_number] in weed_cluster_names:
-                    iou_per_test_image_wc.append(iou_tmp[5])
+                counter =0 
+                if year == '2020':
+                    if background_flag:
+                        if test_loader.dataset.img_names[im_number] in background_names:
+                            iou_per_test_image_bg.append(iou_tmp[counter])
+                            counter+=1
+                    if test_loader.dataset.img_names[im_number] in cloud_shadow_names:
+                        iou_per_test_image_cs.append(iou_tmp[counter])
+                        counter+=1
+                    if test_loader.dataset.img_names[im_number] in double_plant_names:
+                        iou_per_test_image_dp.append(iou_tmp[counter])
+                        counter+=1
+                    if test_loader.dataset.img_names[im_number] in planter_skip_names:
+                        iou_per_test_image_ps.append(iou_tmp[counter])
+                        counter+=1
+                    if test_loader.dataset.img_names[im_number] in standing_water_names:
+                        iou_per_test_image_sw.append(iou_tmp[counter])
+                        counter+=1
+                    if test_loader.dataset.img_names[im_number] in waterway_names:
+                        iou_per_test_image_ww.append(iou_tmp[counter])
+                        counter+=1
+                    if test_loader.dataset.img_names[im_number] in weed_cluster_names:
+                        iou_per_test_image_wc.append(iou_tmp[counter])
+                        counter+=1
+                if year == '2021':
+                    if background_flag:
+                        if test_loader.dataset.img_names[im_number] in background_names:
+                            iou_per_test_image_bg.append(iou_tmp[counter])
+                            counter+=1
+                    if test_loader.dataset.img_names[im_number] in double_plant_names:
+                        iou_per_test_image_dp.append(iou_tmp[counter])
+                        counter+=1
+                    if test_loader.dataset.img_names[im_number] in drydown_names:
+                        iou_per_test_image_dd.append(iou_tmp[counter])
+                        counter+=1
+                    if test_loader.dataset.img_names[im_number] in endrow_names:
+                        iou_per_test_image_er.append(iou_tmp[counter])
+                        counter+=1
+                    if test_loader.dataset.img_names[im_number] in nutrient_deficiency_names:
+                        iou_per_test_image_nd.append(iou_tmp[counter])
+                        counter+=1
+                    if test_loader.dataset.img_names[im_number] in planter_skip_names:
+                        iou_per_test_image_ps.append(iou_tmp[counter])
+                        counter+=1
+                    if test_loader.dataset.img_names[im_number] in storm_damage_names:
+                        iou_per_test_image_sd.append(iou_tmp[counter])
+                        counter+=1
+                    if test_loader.dataset.img_names[im_number] in water_names:
+                        iou_per_test_image_w.append(iou_tmp[counter])
+                        counter+=1
+                    if test_loader.dataset.img_names[im_number] in waterway_names:
+                        iou_per_test_image_ww.append(iou_tmp[counter])
+                        counter+=1
+                    if test_loader.dataset.img_names[im_number] in weed_cluster_names:
+                        iou_per_test_image_wc.append(iou_tmp[counter])
+                        counter+=1
             except:
                 print("Error: Test image is not valid")
                 sys.exit(0)
@@ -265,27 +417,63 @@ def run_testing(segmentation_net, test_loader, ime_foldera_za_upis, device, num_
     #################################
     
     df = pd.DataFrame()
-    if num_classes==1:
-        df_fg = pd.DataFrame()
-        df = [df_fg]
-        df_names = [foreground_names]
-        df_area = [foreground_area]
-        df_iou = [iou_per_test_image_fg]
+    if binary:
+        if background_flag:
+            df_fg = pd.DataFrame()
+            df_bg = pd.DataFrame()
+            df = [df_bg , df_fg]
+            df_names = [background_names, foreground_names]
+            df_area = [background_area, foreground_area]
+            df_iou = [iou_per_test_image_bg, iou_per_test_image_fg]
+        else:
+            df_fg = pd.DataFrame()
+            df = [df_fg]
+            df_names = [foreground_names]
+            df_area = [foreground_area]
+            df_iou = [iou_per_test_image_fg]
         for idx, df_iter in enumerate(df):
             df_iter['filenames'] = df_names[idx]; df_iter['broj piksela pozitivne klase'] = torch.tensor(df_area[idx]); df_iter['iou metrika'] = torch.tensor(df_iou[idx]); df_iter['klasa'] = idx
 
     else:
-        df_cs = pd.DataFrame();df_dp = pd.DataFrame();df_ps = pd.DataFrame();df_sw = pd.DataFrame();df_ww = pd.DataFrame();df_wc = pd.DataFrame()
-        df = [df_cs,df_dp,df_ps,df_sw,df_ww,df_wc]
-        df_names = [cloud_shadow_names,double_plant_names,planter_skip_names,standing_water_names,waterway_names,weed_cluster_names]
-        df_area = [cloud_shadow_area,double_plant_area,planter_skip_area,standing_water_area,waterway_area,weed_cluster_area]
-        df_iou = [iou_per_test_image_cs,iou_per_test_image_dp,iou_per_test_image_ps,iou_per_test_image_sw,iou_per_test_image_ww,iou_per_test_image_wc]
+        if year == '2020':
+
+            df_cs = pd.DataFrame();df_dp = pd.DataFrame();df_ps = pd.DataFrame();df_sw = pd.DataFrame();df_ww = pd.DataFrame();df_wc = pd.DataFrame()
+            if background_flag:
+                df_bg = pd.DataFrame()
+                df = [df_bg,df_cs,df_dp,df_ps,df_sw,df_ww,df_wc]
+                df_names = [background_names, cloud_shadow_names,double_plant_names,planter_skip_names,standing_water_names,waterway_names,weed_cluster_names]
+                df_area = [background_area, cloud_shadow_area,double_plant_area,planter_skip_area,standing_water_area,waterway_area,weed_cluster_area]
+                df_iou = [iou_per_test_image_bg, iou_per_test_image_cs,iou_per_test_image_dp,iou_per_test_image_ps,iou_per_test_image_sw,iou_per_test_image_ww,iou_per_test_image_wc]
+            
+            else:
+                df = [df_cs,df_dp,df_ps,df_sw,df_ww,df_wc]
+                df_names = [cloud_shadow_names,double_plant_names,planter_skip_names,standing_water_names,waterway_names,weed_cluster_names]
+                df_area = [cloud_shadow_area,double_plant_area,planter_skip_area,standing_water_area,waterway_area,weed_cluster_area]
+                df_iou = [iou_per_test_image_cs,iou_per_test_image_dp,iou_per_test_image_ps,iou_per_test_image_sw,iou_per_test_image_ww,iou_per_test_image_wc]
+            
+        elif year == '2021':
+
+            df_dp = pd.DataFrame();df_dd = pd.DataFrame();df_er = pd.DataFrame();df_nd = pd.DataFrame();df_ps = pd.DataFrame(); df_sd = pd.DataFrame(); df_w = pd.DataFrame();  df_ww = pd.DataFrame(); df_wc = pd.DataFrame();
+            if background_flag:
+                df_bg = pd.DataFrame()
+                df = [df_bg,df_dp,df_dd,df_er,df_nd,df_ps,df_sd,df_w,df_ww,df_wc]
+                df_names = [background_names,double_plant_names,drydown_names,endrow_names,nutrient_deficiency_names,planter_skip_names,storm_damage_names,water_names,waterway_names,weed_cluster_names]
+                df_area = [background_area,double_plant_area,drydown_area,endrow_area,nutrient_deficiency_area,planter_skip_area,storm_damage_area,water_area,waterway_area,weed_cluster_area]
+                df_iou = [iou_per_test_image_bg,iou_per_test_image_dp,iou_per_test_image_dd,iou_per_test_image_er,iou_per_test_image_nd,iou_per_test_image_ps,iou_per_test_image_sd,iou_per_test_image_w,iou_per_test_image_ww,iou_per_test_image_wc]
+            else:
+                df = [df_dp,df_dd,df_er,df_nd,df_ps,df_sd,df_w,df_ww,df_wc]
+                df_names = [double_plant_names,drydown_names,endrow_names,nutrient_deficiency_names,planter_skip_names,storm_damage_names,water_names,waterway_names,weed_cluster_names]
+                df_area = [double_plant_area,drydown_area,endrow_area,nutrient_deficiency_area,planter_skip_area,storm_damage_area,water_area,waterway_area,weed_cluster_area]
+                df_iou = [iou_per_test_image_dp,iou_per_test_image_dd,iou_per_test_image_er,iou_per_test_image_nd,iou_per_test_image_ps,iou_per_test_image_sd,iou_per_test_image_w,iou_per_test_image_ww,iou_per_test_image_wc]
+        else:
+            print("Error: Wrong dataset year")
+            sys.exit(0)
         for idx, df_iter in enumerate(df):
             df_iter['filenames'] = df_names[idx]; df_iter['broj piksela pozitivne klase'] = torch.tensor(df_area[idx]); df_iter['iou metrika'] = torch.tensor(df_iou[idx]); df_iter['klasa'] = idx
         
     for idx, df_iter in enumerate(df):
         df[idx] = df_iter.sort_values('iou metrika',ascending=False)
                 
-    tb_top_k_worst_k(df, num_classes, k_index, test_loader, loss_type, zscore, device, segmentation_net, tb, classes_labels,dataset)
+    tb_top_k_worst_k(df, num_classes, k_index, test_loader, loss_type, zscore, device, segmentation_net, tb, classes_labels,dataset,year)
     return IOU
     

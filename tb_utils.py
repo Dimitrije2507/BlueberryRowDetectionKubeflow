@@ -43,44 +43,72 @@ def tb_num_pix_num_classes(tb,count_train,count_train_tb,count_freq,num_channels
         count_train_tb += 1
     
 def tb_write_image(tb, num_classes, epoch, input_var, target_var,mask_var, model_output, index, train_part,
-                   tb_img_name,device,use_mask,dataset):
+                   tb_img_name,device,use_mask,dataset,loss_type,year):
     
-    if num_classes >= 1:
-    
+    # if num_classes >= 1:
+    if loss_type == 'bce':
         tresholded = model_output[index, :, :, :]>0.5
         out = tresholded.byte()
-        out = decode_segmap2(out,num_classes,device)
-        out = torch.moveaxis(out, 2, 0)
+        out = decode_segmap2(out,num_classes,device,loss_type,year)
+        out = torch.moveaxis(out, 2, 0).detach().cpu().numpy()
 
         target = target_var[index, :, :, :]>0.5
         target = target.byte()
-        target = decode_segmap2(target,num_classes,device)
-        target = torch.moveaxis(target, 2, 0).to(device)
+        target = decode_segmap2(target,num_classes,device,loss_type,year)
+        target = torch.moveaxis(target, 2, 0).detach().cpu().numpy()
 
-        image = (input_var[index, :, :, :]).reshape(4, 512, 512)
-        
-        rgb_image = inv_zscore_func(image,dataset)[0:3,:,:]
-        nir_image = inv_zscore_func(image,dataset)[3,:,:]
-        nir_image= nir_image.repeat(3,1,1)
-        tb.add_image("RGB , NIR, Label, Prediction" + tb_img_name + " " + train_part,
-                     torch.concat([rgb_image.byte(), torch.ones(size=(3,512,10),device=device,dtype=torch.uint8)*255 , nir_image.byte(), 
-                     torch.ones(size=(3,512,10),device=device,dtype=torch.uint8)*255,target.byte(), torch.ones(size=(3,512,10),device=device,dtype=torch.uint8)*255 ,out.byte()], axis=2),
-                     epoch, dataformats="CHW")
-        
-        iou_1 = calc_metrics_tb(model_output[index, :, :, :].unsqueeze(dim=0),
-                                          target_var[index, :, :, :].unsqueeze(dim=0),mask_var[index].unsqueeze(dim=0), num_classes,use_mask)
-       
-        iou_1 = torch.tensor(iou_1,dtype = torch.float32)
-        tb.add_scalar("Miou/" + tb_img_name + " " + train_part, iou_1, epoch)
+    elif loss_type == 'ce':
+        tresholded = model_output[index, :, :, :]
+        out = tresholded.byte()
+        out = torch.argmax(out.squeeze(),dim=0)
+
+        out = decode_segmap2(out,num_classes,device,loss_type,year)
+        out = torch.moveaxis(out, 2, 0).detach().cpu().numpy()
+
+        target = target_var[index, :, :, :]
+        target = target.byte()
+        target = torch.argmax(target.squeeze(),dim=0)
+        target = decode_segmap2(target,num_classes,device,loss_type,year) 
+        target = torch.moveaxis(target, 2, 0).detach().cpu().numpy()
+
+    else:
+        print("Error: Unimplemented loss type! Importing images to tensorboard interupted")
+        sys.exit(0)
+    
+    image = (input_var[index, :, :, :]).reshape(4, 512, 512)
+    #rgb_image = inv_zscore_func(image,dataset)[0:3,:,:]
+    #ir_image = inv_zscore_func(image,dataset)[3,:,:]
+    rgb_image = (inv_norm_func(image.detach().cpu())[0:3,:,:]).astype('uint8')
+    nir_image = inv_norm_func(image.detach().cpu())[3,:,:]
+    nir_image = nir_image[np.newaxis,:,:]
+    nir_image =  (np.repeat(nir_image,3,axis=0)).astype('uint8')
+    mask_bool = (mask_var[index]).detach().cpu().numpy().astype('uint8')
+    
+    print('rgb:',rgb_image)
+    print('nir:',nir_image)
+    print('mask:',mask_bool)
+    print("out:",out)
+    print("target:",target)
+    tb.add_image("RGB , NIR, Label, Prediction" + tb_img_name + " " + train_part,
+                    np.concatenate([rgb_image, np.ones(shape=(3,512,10),dtype=np.uint8)*255 , nir_image, 
+                    np.ones(shape=(3,512,10),dtype=np.uint8)*255,(target*mask_bool).astype('uint8'), np.ones(shape=(3,512,10),dtype=np.uint8)*255 ,(out*mask_bool).astype('uint8')], axis=2),
+                    epoch, dataformats="CHW")
+    
+    iou_1 = calc_metrics_tb(model_output[index, :, :, :].unsqueeze(dim=0),
+                                        target_var[index, :, :, :].unsqueeze(dim=0),mask_var[index].unsqueeze(dim=0), num_classes,use_mask)
+                                        
+    
+    iou_1 = torch.tensor(iou_1,dtype = torch.float32)
+    tb.add_scalar("Miou/" + tb_img_name + " " + train_part, iou_1, epoch)
 
 
-def tb_image_list_plotting(tb,tb_img_list,num_channels_lab,epoch,input_var,target_var, mask_var, model_output,train_part,device,batch_names,use_mask,dataset):
+def tb_image_list_plotting(tb,tb_img_list,num_channels_lab,epoch,input_var,target_var, mask_var, model_output,train_part,device,batch_names,use_mask,dataset,loss_type,year):
     tb_list = [tb_img for tb_img in tb_img_list if tb_img in batch_names]
     if tb_list:
         for tb_list_index in range(len(tb_list)):
             tb_img_index = batch_names.index(tb_list[tb_list_index])
             tb_write_image(tb, num_channels_lab, epoch, input_var, target_var, mask_var, model_output,
-                            tb_img_index, train_part, tb_list[tb_list_index],device,use_mask,dataset)
+                            tb_img_index, train_part, tb_list[tb_list_index],device,use_mask,dataset,loss_type,year)
         
         del tb_list, tb_img_index
 
@@ -88,7 +116,7 @@ def tb_add_epoch_losses(tb,train_losses,validation_losses,epoch):
     tb.add_scalar("Loss/Train", torch.mean(torch.tensor(train_losses,dtype = torch.float32)), epoch)
     tb.add_scalar("Loss/Validation", torch.mean(torch.tensor(validation_losses,dtype = torch.float32)), epoch)
 
-def tb_top_k_worst_k(df, num_classes, k_index, test_loader, loss_type, zscore,device,segmentation_net,tb,classes_labels,dataset):
+def tb_top_k_worst_k(df, num_classes, k_index, test_loader, loss_type, zscore,device,segmentation_net,tb,classes_labels,dataset,year):
     for class_iter in range(num_classes):
         df_tmp = df[class_iter]
         # klasa0 = df[df['klasa']==i].reset_index().iloc[:,1:]
@@ -99,80 +127,166 @@ def tb_top_k_worst_k(df, num_classes, k_index, test_loader, loss_type, zscore,de
         # df_tmp = df_tmp[(df_tmp["broj piksela pozitivne klase"]>(mean_num_pix-std_num_pix)).values & (df_tmp["broj piksela pozitivne klase"]<(mean_num_pix+std_num_pix)).values]
         df_tmp_top2 = df_tmp.reset_index().iloc[:k_index,1:]
         df_tmp_worst2 = df_tmp.reset_index().iloc[-k_index:,1:]
-        
-        for k_iter in range(k_index):
-            test_img_top_tmp, target_top = load_raw_data(test_loader,df_tmp_top2,k_iter,loss_type)
-            test_img_worst_tmp, target_worst = load_raw_data(test_loader,df_tmp_worst2,k_iter,loss_type)
+        if not df_tmp_top2.empty and not df_tmp_worst2.empty:
+            for k_iter in range(k_index):
+                test_img_top_tmp, target_top = load_raw_data(test_loader,df_tmp_top2,k_iter,loss_type)
+                test_img_worst_tmp, target_worst = load_raw_data(test_loader,df_tmp_worst2,k_iter,loss_type)
 
-            if zscore:
-                test_img_top = zscore_func(test_img_top_tmp,device,dataset)
-                test_img_worst = zscore_func(test_img_worst_tmp,device,dataset)
+                if zscore:
+                    test_img_top = zscore_func(test_img_top_tmp,device,dataset)
+                    test_img_worst = zscore_func(test_img_worst_tmp,device,dataset)
+                else:
+                    test_img_top = norm_func(torch.tensor(test_img_top_tmp),device)
+                    test_img_worst = norm_func(torch.tensor(test_img_worst_tmp),device)
+
+                target_top = torch.tensor(target_top)
+                target_worst = torch.tensor(target_worst)
                 
-            target_top = torch.tensor(target_top)
-            target_worst = torch.tensor(target_worst)
-            
-            if loss_type == 'bce' and num_classes == 1:
-                target_top = ((target_top[0]+target_top[1]+target_top[2]+target_top[3]+target_top[4]+target_top[5])>0).float().unsqueeze(0)
-                target_worst = ((target_worst[0]+target_worst[1]+target_worst[2]+target_worst[3]+target_worst[4]+target_worst[5])>0).float().unsqueeze(0)
-            
-            image_top = torch.tensor(test_img_top_tmp[:4],device=device)
-            image_worst = torch.tensor(test_img_worst_tmp[:4],device=device)
-            
-            nir_top = inv_zscore_func(image_top,dataset)[3,:,:]
-            rgb_image_top = inv_zscore_func(image_top,dataset)[0:3,:,:]
-            nir_top = nir_top.repeat(3,1,1)
+                if loss_type == 'bce' and num_classes == 1:
+                    target_top = ((target_top[0]+target_top[1]+target_top[2]+target_top[3]+target_top[4]+target_top[5])>0).float().unsqueeze(0)
+                    target_worst = ((target_worst[0]+target_worst[1]+target_worst[2]+target_worst[3]+target_worst[4]+target_worst[5])>0).float().unsqueeze(0)
+                
+                if zscore:
+                    image_top = torch.tensor(test_img_top_tmp[:4],device=device)
+                    image_worst = torch.tensor(test_img_worst_tmp[:4],device=device)
 
-            nir_worst = inv_zscore_func(image_worst,dataset)[3,:,:]
-            rgb_image_worst = inv_zscore_func(image_worst,dataset)[0:3,:,:]
-            nir_worst = nir_worst.repeat(3,1,1)
+                    nir_top = inv_zscore_func(image_top,dataset)[3,:,:]
+                    rgb_image_top = inv_zscore_func(image_top,dataset)[0:3,:,:]
+                    nir_worst = inv_zscore_func(image_worst,dataset)[3,:,:]
+                    rgb_image_worst = inv_zscore_func(image_worst,dataset)[0:3,:,:]
+                else:
+                    image_top = torch.tensor(test_img_top_tmp[:4],device=device)
+                    image_worst = torch.tensor(test_img_worst_tmp[:4],device=device)
 
-            model_output_top = segmentation_net(test_img_top.unsqueeze(0))
-            out_top = model_output_top[0,:,:,:].squeeze()>0.5
-            out_top = out_top.byte().unsqueeze(0)
-            out_top = decode_segmap2(out_top, num_classes, device)
-            out_top = torch.moveaxis(out_top, 2, 0)
-            
-            model_output_worst = segmentation_net(test_img_worst.unsqueeze(0))
-            out_worst = model_output_worst[0,:,:,:].squeeze()>0.5
-            out_worst = out_worst.byte().unsqueeze(0)
-            out_worst = decode_segmap2(out_worst, num_classes, device)
-            out_worst = torch.moveaxis(out_worst, 2, 0)
-            
-            target_top = decode_segmap2(target_top,num_classes, device)
-            target_top = torch.moveaxis(target_top,2,0)
-            
-            target_worst = decode_segmap2(target_worst, num_classes, device)
-            target_worst = torch.moveaxis(target_worst,2,0)
-            
+                    nir_top = inv_norm_func(image_top.detach().cpu())[3,:,:]
+                    rgb_image_top = inv_norm_func(image_top.detach().cpu())[0:3,:,:]
+                    nir_worst = inv_norm_func(image_worst.detach().cpu())[3,:,:]
+                    rgb_image_worst = inv_norm_func(image_worst.detach().cpu())[0:3,:,:]
+                
+                # nir_top = nir_top.repeat(3,1,1)
+                nir_top = nir_top[np.newaxis,:,:]
+                nir_top =  np.repeat(nir_top,3,axis=0)
+                
+                # nir_worst = nir_worst.repeat(3,1,1)
+                nir_worst = nir_worst[np.newaxis,:,:]
+                nir_worst =  np.repeat(nir_worst,3,axis=0)
 
-            tb.add_image("Top 2 Test Images/Classwise_"+ classes_labels[class_iter] + "_top_"+str(k_iter+1)+"_"+df_tmp_top2.iloc[k_iter]['filenames']+ " Class area: "+ str(df_tmp_top2.iloc[k_iter]['broj piksela pozitivne klase']) + " IoU metric: " + str(df_tmp_top2.iloc[k_iter]['iou metrika']) ,
-                            torch.concat([rgb_image_top.byte(),torch.ones(size=(3,512,10),device=device,dtype=torch.uint8)*255, nir_top.byte() , torch.ones(size=(3,512,10),device=device,dtype=torch.uint8)*255, target_top.byte(), torch.ones(size=(3,512,10),device=device,dtype=torch.uint8)*255, out_top.byte()], axis=2),
-                            1, dataformats="CHW")
-            tb.add_image("Worst 2 Test Images/Classwise_"+ classes_labels[class_iter] + "_worst_"+str(k_iter+1)+"_"+df_tmp_worst2.iloc[k_iter]['filenames'] + " Class area: "+ str(df_tmp_top2.iloc[k_iter]['broj piksela pozitivne klase']) +" IoU metric: " + str(df_tmp_worst2.iloc[k_iter]['iou metrika']) ,
-                            torch.concat([rgb_image_worst.byte(), torch.ones(size=(3,512,10),device=device,dtype=torch.uint8)*255, nir_worst.byte() ,torch.ones(size=(3,512,10),device=device,dtype=torch.uint8)*255, target_worst.byte(),torch.ones(size=(3,512,10),device=device,dtype=torch.uint8)*255, out_worst.byte()], axis=2),
-                            1, dataformats="CHW")
+                model_output_top = segmentation_net(test_img_top.unsqueeze(0))
+                out_top = model_output_top[0,:,:,:].squeeze()>0.5
+                out_top = out_top.byte().unsqueeze(0)
+                out_top = decode_segmap2(out_top, num_classes, device,loss_type,year)
+                out_top = torch.moveaxis(out_top, 2, 0)
+                out_top = out_top.detach().cpu().numpy().astype("uint8")
+
+                model_output_worst = segmentation_net(test_img_worst.unsqueeze(0))
+                out_worst = model_output_worst[0,:,:,:].squeeze()>0.5
+                out_worst = out_worst.byte().unsqueeze(0)
+                out_worst = decode_segmap2(out_worst, num_classes, device,loss_type,year)
+                out_worst = torch.moveaxis(out_worst, 2, 0)
+                out_worst = out_worst.detach().cpu().numpy().astype("uint8")
+
+                target_top = decode_segmap2(target_top,num_classes, device,loss_type,year)
+                target_top = torch.moveaxis(target_top,2,0)
+                target_top = target_top.detach().cpu().numpy().astype("uint8")
+
+                target_worst = decode_segmap2(target_worst, num_classes, device,loss_type,year)
+                target_worst = torch.moveaxis(target_worst,2,0)
+                target_worst = target_worst.detach().cpu().numpy().astype("uint8")
 
 
+                # tb.add_image("Top 2 Test Images/Classwise_"+ classes_labels[class_iter] + "_top_"+str(k_iter+1)+"_"+df_tmp_top2.iloc[k_iter]['filenames']+ " Class area: "+ str(df_tmp_top2.iloc[k_iter]['broj piksela pozitivne klase']) + " IoU metric: " + str(df_tmp_top2.iloc[k_iter]['iou metrika']) ,
+                #                 torch.concat([rgb_image_top.byte(),torch.ones(size=(3,512,10),device=device,dtype=torch.uint8)*255, nir_top.byte() , torch.ones(size=(3,512,10),device=device,dtype=torch.uint8)*255, target_top.byte(), torch.ones(size=(3,512,10),device=device,dtype=torch.uint8)*255, out_top.byte()], axis=2),
+                #                 1, dataformats="CHW")
+                tb.add_image("Top 2 Test Images/Classwise_" + classes_labels[class_iter] + "_top_" + str(k_iter + 1) + "_" +
+                             df_tmp_top2.iloc[k_iter]['filenames'] + " Class area: " + str(
+                    df_tmp_top2.iloc[k_iter]['broj piksela pozitivne klase']) + " IoU metric: " + str(
+                    df_tmp_top2.iloc[k_iter]['iou metrika']),
+                             np.concatenate([rgb_image_top,
+                                           np.ones(shape=(3, 512, 10),  dtype=np.uint8) * 255,
+                                           nir_top.astype("uint8"),
+                                           np.ones(shape=(3, 512, 10),  dtype=np.uint8) * 255,
+                                           target_top,
+                                           np.ones(shape=(3, 512, 10), dtype=np.uint8) * 255,
+                                           out_top], axis=2),
+                             1, dataformats="CHW")
+                
+                
+                # tb.add_image("Worst 2 Test Images/Classwise_"+ classes_labels[class_iter] + "_worst_"+str(k_iter+1)+"_"+df_tmp_worst2.iloc[k_iter]['filenames'] + " Class area: "+ str(df_tmp_top2.iloc[k_iter]['broj piksela pozitivne klase']) +" IoU metric: " + str(df_tmp_worst2.iloc[k_iter]['iou metrika']) ,
+                #                 torch.concat([rgb_image_worst.byte(), torch.ones(size=(3,512,10),device=device,dtype=torch.uint8)*255, nir_worst.byte() ,torch.ones(size=(3,512,10),device=device,dtype=torch.uint8)*255, target_worst.byte(),torch.ones(size=(3,512,10),device=device,dtype=torch.uint8)*255, out_worst.byte()], axis=2),
+                #                 1, dataformats="CHW")
+                tb.add_image(
+                    "Worst 2 Test Images/Classwise_" + classes_labels[class_iter] + "_worst_" + str(k_iter + 1) + "_" +
+                    df_tmp_worst2.iloc[k_iter]['filenames'] + " Class area: " + str(
+                        df_tmp_top2.iloc[k_iter]['broj piksela pozitivne klase']) + " IoU metric: " + str(
+                        df_tmp_worst2.iloc[k_iter]['iou metrika']),
+                    np.concatenate(
+                        [rgb_image_worst, np.ones(shape=(3, 512, 10), dtype=np.uint8) * 255,
+                         nir_worst.astype("uint8"), np.ones(shape=(3, 512, 10), dtype=np.uint8) * 255,
+                         target_worst, np.ones(shape=(3, 512, 10), dtype=np.uint8) * 255,
+                         out_worst], axis=2),
+                    1, dataformats="CHW")
 
-def createConfusionMatrix(loader,net,classes_labels):
+def createConfusionMatrix(loader,net,classes_labels,loss_type):
     y_pred = [] # save predction
     y_true = [] # save ground truth
-
-    for input_var, target_var, img_names_test, z_test in loader:
+    sigmoid_func = torch.nn.Sigmoid()
+    for input_var, target_var, img_names_test, mask_test in loader:
         for idx in range(target_var.shape[0]):
-            target_tmp = target_var[ idx,:, :, :]>0.5
-            target_tmp = target_tmp.byte().flatten()
-        #   target = target.byte()
-            # target_conf = torch.argmax(target_var[idx, :, :, :].squeeze(), dim=0).detach().cpu().numpy().flatten()
-            y_true.extend(target_tmp.detach().cpu().numpy())
-        # target_conf = np.moveaxis(target_conf, 1, 3)
-        # target_conf = np.moveaxis(target_conf, 1, 2)
+            # if loss_type == "bce": # UNDER CONSTRUCTION
+            #     target_tmp = target_var[ idx,:, :, :]>0
+            #     target_tmp = target_tmp.byte()
+            #     counter = 1
+            #     for ch in range(target_tmp.shape[0]):
+            #         target_tmp[ch,:,:] = target_tmp[ch,:,:]*counter
+            #         counter+=1 
+            #     target_tmp = target_tmp.flatten()
+            # #   target = target.byte()
+            #     # target_conf = torch.argmax(target_var[idx, :, :, :].squeeze(), dim=0).detach().cpu().numpy().flatten()
+            #     y_true.extend(target_tmp.detach().cpu().numpy())
+            
+            if loss_type =="ce" or loss_type =="bce":
+                if loss_type == "bce":
+                    target_var_bg = (target_var[idx]>0.5).any(0)==False
+                    target_var2 = torch.cat([target_var_bg.unsqueeze(0),target_var[idx]],dim = 0)
+                else:
+                    target_var2 = target_var[idx,:,:]
+                # target_conf = torch.argmax(target_var[idx, :, :, :].squeeze(), dim=0).byte().flatten()
+                # target_conf2 = (torch.argmax(target_var2.squeeze(), dim=0).byte())[(mask_test[idx,1,:,:]*mask_test[idx,0,:,:]).byte()]
+                target_conf2 = (torch.argmax(target_var2.squeeze(), dim=0).byte())[(mask_test[idx, 1, :, :] * mask_test[idx, 0, :, :]).bool()]
+                y_true.extend(target_conf2.detach().cpu().numpy())
+            else:
+                print("Error: unimplemented loss type")
+                sys.exit(0)
+        
         model_output = net(input_var)
+        if loss_type == 'bce':
+            model_output = sigmoid_func(model_output)
         for idx in range(model_output.shape[0]):
-            output_tmp = model_output[ idx,:, :, :]>0.5
-            output_tmp = output_tmp.byte().flatten()
-            # pred_conf = torch.argmax(model_output[idx, :, :, :].squeeze(), dim=0).detach().cpu().numpy().flatten()
-            y_pred.extend(output_tmp.detach().cpu().numpy())
+            # if loss_type == "bce": # ALSO UNDER CONSTRUCTION
+            #     output_tmp = model_output[ idx,:, :, :]>0
+            #     output_tmp = output_tmp.byte()
+            #     counter = 1
+            #     for ch in range(output_tmp.shape[0]):
+            #         output_tmp[ch,:,:] = output_tmp[ch,:,:]*counter
+            #         counter+=1 
+            #     output_tmp = output_tmp.flatten()
+            #     # pred_conf = torch.argmax(model_output[idx, :, :, :].squeeze(), dim=0).detach().cpu().numpy().flatten()
+            #     y_pred.extend(output_tmp.detach().cpu().numpy())
+            if loss_type =="ce" or loss_type =="bce":
+                if loss_type == "bce":
+                    #### dodaj sigmoid da model_output bude verovatnoca #####
+                    model_output_bg = (model_output[idx]>0.5).any(0)==False
+                    model_output2 = torch.cat([model_output_bg.unsqueeze(0),model_output[idx]],dim = 0)
+                else:
+                    model_output2 = model_output[idx,:,:]
+                # pred_conf = torch.argmax(model_output[idx, :, :, :].squeeze(), dim=0).detach().cpu().numpy().flatten()
+                # pred_conf2 = (torch.argmax(model_output2.squeeze(), dim=0).byte())[(mask_test[idx,1,:,:]*mask_test[idx,0,:,:]).byte()]
+                pred_conf2 = (torch.argmax(model_output2.squeeze(), dim=0).byte())[(mask_test[idx, 1, :, :] * mask_test[idx, 0, :, :]).bool()]
+                y_pred.extend(pred_conf2.detach().cpu().numpy())
+
+            else:
+                print("Error: unimplemented loss type")
+                sys.exit(0)
         # pred_conf = np.moveaxis(pred_conf, 1, 3)
         # pred_conf = np.moveaxis(pred_conf, 1, 2)
         # conf_matrix = confusion_matrix(target_conf, pred_conf)
