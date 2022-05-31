@@ -217,12 +217,13 @@ def range_norm(img):
 
 def load_raw_data(test_loader,name,k_iter,loss_type):
     
-    image = np.load(os.path.join(test_loader.dataset.root_dir,name.iloc[k_iter]['filenames'])+".npy",allow_pickle=False).astype(np.float32)[:4]
+    image = np.load(os.path.join(test_loader.dataset.root_dir,name.iloc[k_iter]['filenames'])+".npy",allow_pickle=False).astype(np.float32)
     if loss_type == 'bce':
         # Posto zelimo da izbacimo background klasu kada koristimo BCE loss , indeksiramo kanali kao [5:], ako se radi sa background klasom odnosno koristi se CE loss, promeniti na [4:]
-        target = np.load(os.path.join(test_loader.dataset.root_dir,name.iloc[k_iter]['filenames'])+".npy",allow_pickle=False).astype(np.float32)[5:-2]
+        target = np.load(os.path.join(test_loader.dataset.root_dir[:-3]+'label',name.iloc[k_iter]['filenames'])+"_mask.npy",allow_pickle=False).astype(np.float32)
     else:
-        target = np.load(os.path.join(test_loader.dataset.root_dir,name.iloc[k_iter]['filenames'])+".npy",allow_pickle=False).astype(np.float32)[4:-2]
+        # target = np.load(os.path.join(test_loader.dataset.root_dir,name.iloc[k_iter]['filenames'])+".npy",allow_pickle=False).astype(np.float32)[4:-2]
+        print("Update...")
 
     return image, target
 

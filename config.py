@@ -74,7 +74,7 @@ img_data_format = '.npy'  # Indicated the type of data we use as input
 
 # Integer
 
-epochs = 1    # Number of epochs  we want our model training 
+epochs = 50    # Number of epochs  we want our model training 
 
 set_random_seed = 15    # Setting random seed for torch random generator
 
@@ -181,10 +181,12 @@ dictionary = {
     "freeze_backbone_weights" : freeze_backbone_weights,    
     "zscore" : zscore,
     "binary" : binary,
-    "early_stop" : early_stop,
+    "early_stop_flag" : early_stop,
     "save_best_model" : save_best_model,
     "train_losses" : train_losses,
     "validation_losses" : validation_losses,
+    "classes_labels" : classes_labels,
+    "classes_labels2" : classes_labels2,
 }
   
 # Serializing json 
@@ -195,12 +197,16 @@ with open("config.json", "w") as outfile:
     outfile.write(json_object)
 
 # legend_path = r"/storage/home/antica/PYTHON_projekti/Agrovision_Torch/Legend_Classes.png"
+if loss_type == 'bce':
+    background_flag = False
+else:
+    background_flag = True
 background_names = []
 background_area = []
 foreground_names = []
 foreground_area = [] 
 test_losses = []
-iou_per_test_image_fg = [];
+iou_per_test_image_fg = []
 k_index = 1
 dictionary_test = {
 
@@ -214,6 +220,7 @@ dictionary_test = {
     "binary" : binary,
     "use_mask" : use_mask,
     "dataset" : dataset,
+    "background_flag" : background_flag, 
 }
 # Serializing json 
 json_object = json.dumps(dictionary_test, indent = 4)

@@ -196,19 +196,19 @@ def main(lambda_parametri, stepovi, lr,p_index):
         if loss_type == 'bce':
             batch_iou_bg = torch.zeros(size=(len(valid_loader.dataset.img_names),2),device=device,dtype=torch.float32)
 
-        for input_var, target_var, batch_names_valid, mask_val in valid_loader:
+        for input_var, target_var, batch_names_valid in valid_loader:
 
             model_output = segmentation_net.forward(input_var)
-            mask_val = torch.logical_and(mask_val[:,0,:,:],mask_val[:,1,:,:])
-            val_loss = loss_calc(loss_type,criterion,model_output,target_var,mask_val, num_channels_lab ,use_mask)
+            # mask_val = torch.logical_and(mask_val[:,0,:,:],mask_val[:,1,:,:])
+            val_loss = loss_calc(loss_type,criterion,model_output,target_var, num_channels_lab ,use_mask)
 
             validation_losses.append(val_loss.data)
 
             index_end = index_start + len(batch_names_valid)
             if loss_type == 'bce':
-                batch_iou[index_start:index_end, :], batch_iou_bg[index_start:index_end]= calc_metrics_pix(model_output, target_var,mask_val, num_channels_lab,device,use_mask,loss_type)
+                batch_iou[index_start:index_end, :], batch_iou_bg[index_start:index_end]= calc_metrics_pix(model_output, target_var, num_channels_lab,device,use_mask,loss_type)
             elif loss_type == 'ce':
-                batch_iou[index_start:index_end, :]= calc_metrics_pix(model_output, target_var,mask_val, num_channels_lab, device, use_mask,loss_type)
+                batch_iou[index_start:index_end, :]= calc_metrics_pix(model_output, target_var, num_channels_lab, device, use_mask,loss_type)
             else:
                 print("Error: unimplemented loss type")
                 sys.exit(0)
@@ -220,7 +220,7 @@ def main(lambda_parametri, stepovi, lr,p_index):
             ##############################################################################
 
             tb_image_list_plotting(tb, tb_img_list, num_channels_lab, epoch, input_var, target_var,\
-                 mask_val, model_output, train_part, device, batch_names_valid,use_mask,dataset,loss_type,year)
+                model_output, train_part, device, batch_names_valid,use_mask,dataset,loss_type)
 
             count_val += 1
             print("*", end="")
@@ -285,7 +285,7 @@ def main(lambda_parametri, stepovi, lr,p_index):
         criterion_1 = criterion
         
         test_loader = AgroVisionDataLoader(img_size, numpy_test_path, img_data_format, shuffle_state,
-                                           batch_size, device, zscore,binary,dataset,background_flag)
+                                           batch_size, device, zscore,binary,dataset)
         uporedna_tabela = pd.DataFrame()
         IOU = run_testing(segmentation_net, test_loader, ime_foldera_za_upis, device, num_channels_lab, classes_labels,classes_labels2,
                      criterion_1, loss_type, tb, zscore)

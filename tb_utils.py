@@ -117,7 +117,7 @@ def tb_add_epoch_losses(tb,train_losses,validation_losses,epoch):
     tb.add_scalar("Loss/Train", torch.mean(torch.tensor(train_losses,dtype = torch.float32)), epoch)
     tb.add_scalar("Loss/Validation", torch.mean(torch.tensor(validation_losses,dtype = torch.float32)), epoch)
 
-def tb_top_k_worst_k(df, num_classes, k_index, test_loader, loss_type, zscore,device,segmentation_net,tb,classes_labels,dataset,year):
+def tb_top_k_worst_k(df, num_classes, k_index, test_loader, loss_type, zscore,device,segmentation_net,tb,classes_labels,dataset):
     for class_iter in range(num_classes):
         df_tmp = df[class_iter]
         # klasa0 = df[df['klasa']==i].reset_index().iloc[:,1:]
@@ -137,15 +137,13 @@ def tb_top_k_worst_k(df, num_classes, k_index, test_loader, loss_type, zscore,de
                     test_img_top = zscore_func(test_img_top_tmp,device,dataset)
                     test_img_worst = zscore_func(test_img_worst_tmp,device,dataset)
                 else:
-                    test_img_top = norm_func(torch.tensor(test_img_top_tmp),device)
-                    test_img_worst = norm_func(torch.tensor(test_img_worst_tmp),device)
+                    test_img_top = norm_func(torch.tensor(test_img_top_tmp),device).permute(2,0,1)
+                    test_img_worst = norm_func(torch.tensor(test_img_worst_tmp),device).permute(2,0,1)
 
                 target_top = torch.tensor(target_top)
                 target_worst = torch.tensor(target_worst)
                 
-                if loss_type == 'bce' and num_classes == 1:
-                    target_top = ((target_top[0]+target_top[1]+target_top[2]+target_top[3]+target_top[4]+target_top[5])>0).float().unsqueeze(0)
-                    target_worst = ((target_worst[0]+target_worst[1]+target_worst[2]+target_worst[3]+target_worst[4]+target_worst[5])>0).float().unsqueeze(0)
+                
                 
                 if zscore:
                     image_top = torch.tensor(test_img_top_tmp[:4],device=device)
@@ -156,41 +154,53 @@ def tb_top_k_worst_k(df, num_classes, k_index, test_loader, loss_type, zscore,de
                     nir_worst = inv_zscore_func(image_worst,dataset)[3,:,:]
                     rgb_image_worst = inv_zscore_func(image_worst,dataset)[0:3,:,:]
                 else:
-                    image_top = torch.tensor(test_img_top_tmp[:4],device=device)
-                    image_worst = torch.tensor(test_img_worst_tmp[:4],device=device)
+                    image_top = torch.tensor(test_img_top_tmp,device=device).permute(2,0,1)
+                    image_worst = torch.tensor(test_img_worst_tmp,device=device).permute(2,0,1)
 
-                    nir_top = inv_norm_func(image_top.detach().cpu())[3,:,:]
                     rgb_image_top = inv_norm_func(image_top.detach().cpu())[0:3,:,:]
-                    nir_worst = inv_norm_func(image_worst.detach().cpu())[3,:,:]
+                    nir_top = inv_norm_func(image_top.detach().cpu())[3,:,:]
+                    red_edge_top = inv_norm_func(image_top.detach().cpu())[4,:,:]
+                    
                     rgb_image_worst = inv_norm_func(image_worst.detach().cpu())[0:3,:,:]
-                
+                    nir_worst = inv_norm_func(image_worst.detach().cpu())[3,:,:]
+                    red_edge_worst = inv_norm_func(image_worst.detach().cpu())[4,:,:]
                 # nir_top = nir_top.repeat(3,1,1)
                 nir_top = nir_top[np.newaxis,:,:]
                 nir_top =  np.repeat(nir_top,3,axis=0)
                 
+                red_edge_top = red_edge_top[np.newaxis,:,:]
+                red_edge_top =  np.repeat(red_edge_top,3,axis=0)
+
                 # nir_worst = nir_worst.repeat(3,1,1)
                 nir_worst = nir_worst[np.newaxis,:,:]
                 nir_worst =  np.repeat(nir_worst,3,axis=0)
 
+                red_edge_worst = red_edge_worst[np.newaxis,:,:]
+                red_edge_worst =  np.repeat(red_edge_worst,3,axis=0)
+                ## ADD SIGMOID
+                sigmoid_func = torch.nn.Sigmoid()
                 model_output_top = segmentation_net(test_img_top.unsqueeze(0))
+                model_output_top = sigmoid_func(model_output_top)
+
                 out_top = model_output_top[0,:,:,:].squeeze()>0.5
                 out_top = out_top.byte().unsqueeze(0)
-                out_top = decode_segmap2(out_top, num_classes, device,loss_type,year)
+                out_top = decode_segmap2(out_top, num_classes, device,loss_type)
                 out_top = torch.moveaxis(out_top, 2, 0)
                 out_top = out_top.detach().cpu().numpy().astype("uint8")
 
                 model_output_worst = segmentation_net(test_img_worst.unsqueeze(0))
+                model_output_top = sigmoid_func(model_output_top)
                 out_worst = model_output_worst[0,:,:,:].squeeze()>0.5
                 out_worst = out_worst.byte().unsqueeze(0)
-                out_worst = decode_segmap2(out_worst, num_classes, device,loss_type,year)
+                out_worst = decode_segmap2(out_worst, num_classes, device,loss_type)
                 out_worst = torch.moveaxis(out_worst, 2, 0)
                 out_worst = out_worst.detach().cpu().numpy().astype("uint8")
 
-                target_top = decode_segmap2(target_top,num_classes, device,loss_type,year)
+                target_top = decode_segmap2(target_top,num_classes, device,loss_type)
                 target_top = torch.moveaxis(target_top,2,0)
                 target_top = target_top.detach().cpu().numpy().astype("uint8")
 
-                target_worst = decode_segmap2(target_worst, num_classes, device,loss_type,year)
+                target_worst = decode_segmap2(target_worst, num_classes, device,loss_type)
                 target_worst = torch.moveaxis(target_worst,2,0)
                 target_worst = target_worst.detach().cpu().numpy().astype("uint8")
 
@@ -205,6 +215,8 @@ def tb_top_k_worst_k(df, num_classes, k_index, test_loader, loss_type, zscore,de
                              np.concatenate([rgb_image_top,
                                            np.ones(shape=(3, 512, 10),  dtype=np.uint8) * 255,
                                            nir_top.astype("uint8"),
+                                           np.ones(shape=(3, 512, 10),  dtype=np.uint8) * 255,
+                                           red_edge_top.astype("uint8"),
                                            np.ones(shape=(3, 512, 10),  dtype=np.uint8) * 255,
                                            target_top,
                                            np.ones(shape=(3, 512, 10), dtype=np.uint8) * 255,
@@ -222,7 +234,7 @@ def tb_top_k_worst_k(df, num_classes, k_index, test_loader, loss_type, zscore,de
                         df_tmp_worst2.iloc[k_iter]['iou metrika']),
                     np.concatenate(
                         [rgb_image_worst, np.ones(shape=(3, 512, 10), dtype=np.uint8) * 255,
-                         nir_worst.astype("uint8"), np.ones(shape=(3, 512, 10), dtype=np.uint8) * 255,
+                         nir_worst.astype("uint8"), np.ones(shape=(3, 512, 10), dtype=np.uint8) * 255,red_edge_worst.astype("uint8"), np.ones(shape=(3, 512, 10), dtype=np.uint8) * 255,
                          target_worst, np.ones(shape=(3, 512, 10), dtype=np.uint8) * 255,
                          out_worst], axis=2),
                     1, dataformats="CHW")
@@ -231,7 +243,7 @@ def createConfusionMatrix(loader,net,classes_labels,loss_type):
     y_pred = [] # save predction
     y_true = [] # save ground truth
     sigmoid_func = torch.nn.Sigmoid()
-    for input_var, target_var, img_names_test, mask_test in loader:
+    for input_var, target_var, img_names_test in loader:
         for idx in range(target_var.shape[0]):
             # if loss_type == "bce": # UNDER CONSTRUCTION
             #     target_tmp = target_var[ idx,:, :, :]>0
@@ -253,8 +265,8 @@ def createConfusionMatrix(loader,net,classes_labels,loss_type):
                     target_var2 = target_var[idx,:,:]
                 # target_conf = torch.argmax(target_var[idx, :, :, :].squeeze(), dim=0).byte().flatten()
                 # target_conf2 = (torch.argmax(target_var2.squeeze(), dim=0).byte())[(mask_test[idx,1,:,:]*mask_test[idx,0,:,:]).byte()]
-                target_conf2 = (torch.argmax(target_var2.squeeze(), dim=0).byte())[(mask_test[idx, 1, :, :] * mask_test[idx, 0, :, :]).bool()]
-                y_true.extend(target_conf2.detach().cpu().numpy())
+                target_conf2 = (torch.argmax(target_var2.squeeze(), dim=0).byte())
+                y_true.extend(target_conf2.unsqueeze(0).detach().cpu().numpy().flatten())
             else:
                 print("Error: unimplemented loss type")
                 sys.exit(0)
@@ -282,8 +294,8 @@ def createConfusionMatrix(loader,net,classes_labels,loss_type):
                     model_output2 = model_output[idx,:,:]
                 # pred_conf = torch.argmax(model_output[idx, :, :, :].squeeze(), dim=0).detach().cpu().numpy().flatten()
                 # pred_conf2 = (torch.argmax(model_output2.squeeze(), dim=0).byte())[(mask_test[idx,1,:,:]*mask_test[idx,0,:,:]).byte()]
-                pred_conf2 = (torch.argmax(model_output2.squeeze(), dim=0).byte())[(mask_test[idx, 1, :, :] * mask_test[idx, 0, :, :]).bool()]
-                y_pred.extend(pred_conf2.detach().cpu().numpy())
+                pred_conf2 = (torch.argmax(model_output2.squeeze(), dim=0).byte())
+                y_pred.extend(pred_conf2.unsqueeze(0).detach().cpu().numpy().flatten())
 
             else:
                 print("Error: unimplemented loss type")
