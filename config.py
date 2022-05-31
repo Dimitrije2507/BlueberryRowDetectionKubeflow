@@ -12,15 +12,15 @@ server = False       # Flag that indicates whether to use server or local machin
 
 load_numpy = True   # Flag that indicates what type of data we use as input
 
-use_mask = True # Flag that indicates are we masking data with boundery and valid masks
+use_mask = False # Flag that indicates are we masking data with boundery and valid masks
 
-use_weights = True  # Flag that indicates whether to use class weights when initializing loss function
+use_weights = False  # Flag that indicates whether to use class weights when initializing loss function
 
 do_testing = True   # Flag that indicates whether to do testing after the training is done
 
 count_logs_flag = False # Flag that indicates whether to plot number of classes and pixels in tensorboard, classwise and batch-wise
 
-zscore = True       # Flag that indicates whether we use zscore normalization in preprocessing
+zscore = False       # Flag that indicates whether we use zscore normalization in preprocessing
 
 binary = True       # Flag that indicates whether we do binary semantic segmentation
 
@@ -35,48 +35,36 @@ save_best_model = True # Initial "best model" flag, indicates whether to save mo
 
 scheduler_lr = 'multiplicative' # Indicates which scheduler to use
 
-dataset = "mini"            # "mini" or "full" Indicates whether we want to use full dataset for training, validation and testing or decimated version
-year = "2020" # "2020" or "2021"
+dataset = "Proba"            # "mini" or "full" Indicates whether we want to use full dataset for training, validation and testing or decimated version
+# year = "2020" # "2020" or "2021"
 if server:                  # Depending on server flag, we use different device settings:
         device = "cuda"     # if server is True, that is, if we are using server machine, device will be set as "cuda"
 elif server == False:
     device = "cpu"          # else if server is False and we are using local machine or server access node, device will be set as "cpu"
 
-if dataset == 'mini':  # paths to the datasets
-    numpy_path = r"/storage/home/antica/DATASETS/Agriculture_Vision_2020_mini/numpy_new"
-    numpy_valid_path = r"/storage/home/antica/DATASETS/Agriculture_Vision_2020_mini/numpy_new_valid"
-    numpy_test_path = r"/storage/home/antica/DATASETS/Agriculture_Vision_2020_mini/numpy_new_test"
-    
-    # numpy_path = r"/storage/home/antica/DATASETS/Agriculture_Vision_2020_mini/train/numpy"              # mini train dataset
-    # numpy_valid_path = r"/storage/home/antica/DATASETS/Agriculture_Vision_2020_mini/train/numpy_valid"  # mini validation dataset
-    # numpy_test_path = r"/storage/home/antica/DATASETS/Agriculture_Vision_2020_mini/train/numpy_test"    # mini test dataset
-elif dataset == 'full':
-    numpy_path = r"/storage/home/antica/DATASETS/Agriculture_Vision_2020/train/numpy"            # full train dataset
-    numpy_valid_path = r"/storage/home/antica/DATASETS/Agriculture_Vision_2020/val/numpy_valid"  # full validation dataset
-    numpy_test_path = r"/storage/home/antica/DATASETS/Agriculture_Vision_2020/val/numpy_test"    # full test dataset
+if dataset == 'Proba':  # paths to the datasets
+    numpy_path = r"/home/stefanovicd/DeepSleep/agrovision/DetekcijaBorovnica/proba/trening_set/img"
+    numpy_valid_path = r"/home/stefanovicd/DeepSleep/agrovision/DetekcijaBorovnica/proba/validation_set/img"
+    numpy_test_path = r"/home/stefanovicd/DeepSleep/agrovision/DetekcijaBorovnica/proba/test_set/img"
+elif dataset == 'Borovnica':   
+    numpy_path = r"/home/stefanovicd/DeepSleep/agrovision/DetekcijaBorovnica/trening_set"              # mini train dataset
+    numpy_valid_path = r"/home/stefanovicd/DeepSleep/agrovision/DetekcijaBorovnica/validation_set"  # mini validation dataset
+    numpy_test_path = r"/home/stefanovicd/DeepSleep/agrovision/DetekcijaBorovnica/test_set"    # mini test dataset
 
-classes_labels = ['foreground']  # Classes that we are trying to detect. For BCE, background class is rejected 
-classes_labels2 = ['background','foreground'] # classes_labels + background
-if year == "2021":
-    multiclasses_labels = ["double_plant", "drydown", "endrow", "nutrient_deficiency", "planter_skip", "water", "waterway", "weed_cluster"]
-    multiclasses_labels2 = ["background","double_plant", "drydown", "endrow", "nutrient_deficiency", "planter_skip", "water", "waterway", "weed_cluster"]
-elif year == "2020":
-    multiclasses_labels = ['cloud_shadow','double_plant','planter_skip','standing_water','waterway','weed_cluster']
-    multiclasses_labels2 = ['background','cloud_shadow','double_plant','planter_skip','standing_water','waterway','weed_cluster']
+classes_labels = ['Borovnica']  # Classes that we are trying to detect. For BCE, background class is rejected 
+classes_labels2 = ['background','Borovnica'] # classes_labels + background
 
-if not(binary):
-    classes_labels = multiclasses_labels
-    classes_labels2 = multiclasses_labels2
 
 tb_img_list = [ ########## Train samples which we want to visualize in tensorboard during the training 
-                     'MWK791B1K_648-7567-1160-8079','1DJX4RH9N_6972-614-7484-1126',
-                    '1DJX4RH9N_768-380-1280-892', '2CVV62WDV_7422-650-7934-1162',
-                    '2CVV62WDV_9600-696-10112-1208','2FPNYIQY1_944-1011-1456-1523',
-                    '2J7111V4A_1162-3466-1674-3978', '2HFHD3N34_658-426-1170-938',
+                     'svi_kanali_combo_8',#'svi_kanali_combo_8',
+                    # '', '',
+                    # '','',
+                    # '', '',
                 ########## Validation samples which we want to visualize in tensorboard during the training
-                   '18X67NLZ2_1219-1603-1731-2115','HLXDJEHJT_766-3006-1278-3518'
-                   ,'A88IZM6PD_817-8408-1329-8920',
-                   '6ZNXWNPB7_597-3417-1109-3929', 'G9N8LNVPV_625-1306-1137-1818']
+                   'svi_kanali_combo_8',#''
+                #    ,'',
+                #    '', ''
+                ]
 
 loss_type = 'bce'       # Indicates loss type we want to use: bce, ce, ce_1
 
@@ -111,14 +99,8 @@ if save_checkpoint_freq >= 100:
 if save_checkpoint_freq == 0:
     save_checkpoint_freq = 1000
 
-num_channels = 4    # Number of input channels: Red, Green, Blue, NIR
+num_channels = 5    # Number of input channels: Red, Green, Blue, NIR, Red-Edge
 
-# if binary:
-#     num_channels_lab = 1 # 2 # Number of output channels and label channels: num_channels_lab = 1 for binary semantic segmentation: BCE loss without background class
-# else:
-#     num_channels_lab = 6 # 7                                       # num_channels_lab = 2 for binary semantic segmentation: CE loss with background class
-                                                                   # num channels_lab = 6 for multiclass semantic segmentation: BCE loss without background class
-                                                                   # num channels_lab = 7 for multiclass semantic segmentation: CE loss with background class
 num_channels_lab = len(classes_labels)
 
 img_h = 512 # Input image Height
@@ -182,8 +164,6 @@ dictionary = {
     "img_size": img_size,
     "epoch_model_last_save" : epoch_model_last_save,
     "scheduler_lr" : scheduler_lr,
-    "classes_labels" : classes_labels,
-    "classes_labels2" : classes_labels2,
     "dataset" : dataset,
     "tb_img_list" : tb_img_list,
     "server" : server,
@@ -214,48 +194,21 @@ json_object = json.dumps(dictionary, indent = 4)
 with open("config.json", "w") as outfile:
     outfile.write(json_object)
 
-legend_path = r"/storage/home/antica/PYTHON_projekti/Agrovision_Torch/Legend_Classes.png"
+# legend_path = r"/storage/home/antica/PYTHON_projekti/Agrovision_Torch/Legend_Classes.png"
 background_names = []
 background_area = []
 foreground_names = []
 foreground_area = [] 
-cloud_shadow_names = []; double_plant_names = []; planter_skip_names = []; standing_water_names = []; waterway_names = []; weed_cluster_names = []
-cloud_shadow_area = []; double_plant_area = []; planter_skip_area = []; standing_water_area = []; waterway_area = []; weed_cluster_area = []
 test_losses = []
-iou_per_test_image_cs = [];
-iou_per_test_image_dp = [];
-iou_per_test_image_ps = [];
-iou_per_test_image_sw = [];
-iou_per_test_image_ww = [];
-iou_per_test_image_wc = [];
 iou_per_test_image_fg = [];
 k_index = 1
 dictionary_test = {
 
-    "legend_path" : legend_path,
     "test_losses" : test_losses,
     "background_names" : background_names,
     "foreground_names" : foreground_names,
-    "cloud_shadow_names" : cloud_shadow_names,
-    "double_plant_names" : double_plant_names,
-    "planter_skip_names" : planter_skip_names,
-    "standing_water_names" : standing_water_names,
-    "waterway_names" : waterway_names,
-    "weed_cluster_names" : weed_cluster_names,
     "background_area" : background_area,
     "foreground_area" : foreground_area,
-    "cloud_shadow_area" : cloud_shadow_area,
-    "double_plant_area" : double_plant_area,
-    "planter_skip_area" : planter_skip_area,
-    "standing_water_area" : standing_water_area,
-    "waterway_area" : waterway_area,
-    "weed_cluster_area" : weed_cluster_area,
-    "iou_per_test_image_cs" : iou_per_test_image_cs,
-    "iou_per_test_image_dp" : iou_per_test_image_dp,
-    "iou_per_test_image_ps" : iou_per_test_image_ps,
-    "iou_per_test_image_sw" : iou_per_test_image_sw,
-    "iou_per_test_image_ww" : iou_per_test_image_ww,
-    "iou_per_test_image_wc" : iou_per_test_image_wc,
     "iou_per_test_image_fg" : iou_per_test_image_fg,
     "k_index" : k_index,
     "binary" : binary,
