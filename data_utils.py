@@ -21,9 +21,9 @@ def upisivanje(ispis, ime_foldera):
 def get_args(phase):
     
     if phase == 'test':
-        json_path = r"/home/stefanovicd/DeepSleep/agrovision/AgroVisionUnetBS/config_test.json"
+        json_path = r"/home/stefanovicd/DeepSleep/agrovision/BorovniceUnetBS/config_test.json"
     else:
-        json_path = r"/home/stefanovicd/DeepSleep/agrovision/AgroVisionUnetBS/config.json"
+        json_path = r"/home/stefanovicd/DeepSleep/agrovision/BorovniceUnetBS/config.json"
 
     with open(json_path) as f:
         tmp = json.load(f) 
@@ -66,15 +66,15 @@ def inv_zscore_func(img,dataset):
 
 def norm_func(img,device):
     
-    for ch in range(4):
-        img[ch, :, :] = img[ch, :, :]/255
+    for ch in range(5):
+        img[ :, :, ch] = img[:, :,ch]/255
     img = torch.from_numpy(np.ascontiguousarray(img.detach().cpu())).to(device)
     return img
 
 def inv_norm_func(img):
     img_tmp = copy.deepcopy(img)
 
-    for ch in range(4):
+    for ch in range(5):
         img_tmp[ch, :, :] = img_tmp[ch, :, :]*255.0
     return np.array(img_tmp,dtype='uint8')
 
@@ -82,7 +82,7 @@ def inv_norm_func(img):
 class AgroVisionDataSet(Dataset):
     def __init__(self, img_size,
                  root_dir, data_format, shuffle_state,
-                 transform, device,zscore,binary,dataset,background_flag):
+                 transform, device,zscore,binary,dataset):
 
         imgs_num = int(len(os.listdir(root_dir)))
         img_paths_1 = os.listdir(root_dir)
@@ -101,7 +101,6 @@ class AgroVisionDataSet(Dataset):
         self.device = device
         self.zscore = zscore
         self.binary = binary
-        self.background_flag = background_flag
         self.dataset = dataset
 
     def __len__(self):
@@ -115,39 +114,38 @@ class AgroVisionDataSet(Dataset):
                 np.load(os.path.join(self.root_dir, img_name + self.data_format), allow_pickle=False).astype(
                     np.float32))).to(self.device)
 
-            img = norm_func(img,self.device)
+            img = norm_func(img,self.device).permute(2,0,1)
         elif self.zscore:
             
             img = np.load(os.path.join(self.root_dir, img_name + self.data_format), allow_pickle=False).astype(
                 np.float32)
             img = zscore_func(img,self.device,self.dataset)
-        x = img[0:4, :, :]
-        masks = img[-2:, :, :]
-        if self.binary:
-            if self.background_flag:
-                y_foreground = ((img[5,:,:] +img[6,:,:] + img[7,:,:] + img[8,:,:] + img[9,:,:]  + img[10,:,:])>0).float()
-            else:
-                y_foreground = ((img[4,:,:] +img[5,:,:] +img[6,:,:] + img[7,:,:] + img[8,:,:] + img[9,:,:]  + img[10,:,:])>0).float()
-            
-            y = torch.tensor(y_foreground.unsqueeze(0))
-        else:
-            if self.background_flag:
-                y = img[4:-2, :, :]
-            else:
-                y = img[5:-2, :, :]
         
-        return x, y, img_name , masks
+        
+        
+        if self.binary:
+            label = torch.from_numpy(np.ascontiguousarray(
+                np.load(os.path.join(self.root_dir[:-3],'label', img_name+'_mask' + self.data_format), allow_pickle=False).astype(
+                    np.float32))).to(self.device)
+            
+            label = torch.tensor(label.unsqueeze(0))
+        else:
+            print("Error")
+            sys.exit(0)
+            
+        
+        return img, label, img_name
 
 
 class AgroVisionDataLoader(DataLoader):
-    def __init__(self, img_size, root_dir, data_format, shuffle_state, batch_size, device,zscore = False,binary = True, dataset = 'full',background_flag = False):
+    def __init__(self, img_size, root_dir, data_format, shuffle_state, batch_size, device,zscore = False,binary = True, dataset = 'Proba'):
         transform = transforms.ToTensor()
 
         train_dataset = AgroVisionDataSet(img_size=img_size,
                                           root_dir=root_dir,
                                           data_format=data_format,
                                           shuffle_state=shuffle_state,
-                                          transform=transform, device=device,zscore = zscore,binary = binary, dataset = dataset,background_flag=background_flag)
+                                          transform=transform, device=device,zscore = zscore,binary = binary, dataset = dataset)
 
         sampler = None
         if distributed_is_initialized():
@@ -161,17 +159,17 @@ class AgroVisionDataLoader(DataLoader):
         )
 
 
-def data_loading(ime_foldera_za_upis,numpy_path,numpy_valid_path,binary,background_flag):
+def data_loading(ime_foldera_za_upis,numpy_path,numpy_valid_path,binary):
 
     tmp = get_args('train')
     globals().update(tmp)
     time_start_load = time.time()
     
     train_loader = AgroVisionDataLoader(img_size, numpy_path, img_data_format, shuffle_state,
-                                        batch_size, device, zscore, binary, dataset,background_flag)
+                                        batch_size, device, zscore, binary, dataset)
     
     valid_loader = AgroVisionDataLoader(img_size, numpy_valid_path, img_data_format, shuffle_state,
-                                        batch_size, device, zscore, binary,dataset,background_flag)
+                                        batch_size, device, zscore, binary,dataset)
     time_end_load = time.time()
 
     ispis = ("Time Elapsed Load Dataset", str(time_end_load - time_start_load))
@@ -180,40 +178,19 @@ def data_loading(ime_foldera_za_upis,numpy_path,numpy_valid_path,binary,backgrou
     
     return train_loader, valid_loader
 
-def decode_segmap2(image, nc, device,loss_type,year):
-    if year == '2020':
-        if loss_type == 'bce':
-            
-            label_colors = torch.tensor([ # 0=background
-                                    # 1=cloud_shadow, 2=double_plant, 3=planter_skip, 4=standing_water, 5=waterway
-                                    (255, 0, 0), (0, 255, 0), (255, 255, 0), (0, 0, 255), (255, 0, 255),
-                                    # 6=weed_cluster
-                                    (0, 255, 255)]).byte()
+def decode_segmap2(image, nc, device,loss_type):
+    if loss_type == 'bce':
+        
+        label_colors = torch.tensor([ # 0=background
+                                # 1=Borovnica, 
+                                (255, 0, 0)
+                                ]).byte()
 
-        elif loss_type == "ce":
-            label_colors = torch.tensor([ (0,0,0),# 0=background
-                                    # 1=cloud_shadow, 2=double_plant, 3=planter_skip, 4=standing_water, 5=waterway
-                                    (255, 0, 0), (0, 255, 0), (255, 255, 0), (0, 0, 255), (255, 0, 255),
-                                    # 6=weed_cluster
-                                    (0, 255, 255)]).byte()
-    elif year =='2021':
-        if loss_type == 'bce':
-            
-            label_colors = torch.tensor([ # 0=background
-                                    # 1=double_plant, 2=drydown, 3=end_row, 4=nutrient_deficiency, 5=planter_skip
-                                    (255, 0, 0), (0, 255, 0), (255, 255, 0), (0, 0, 255), (255, 0, 255),
-                                    # 6=storm_damage, 7=water, 8=waterway, 9=weed_cluster
-                                    (0, 255, 255), (155,0,0), (155,155,155), (70,0,155) ]).byte()
-
-        elif loss_type == "ce":
-            label_colors = torch.tensor([ (0,0,0),# 0=background
-                                    # 1=double_plant, 2=drydown, 3=end_row, 4=nutrient_deficiency, 5=planter_skip
-                                    (255, 0, 0), (0, 255, 0), (255, 255, 0), (0, 0, 255), (255, 0, 255),
-                                    # 6=storm_damage, 7=water, 8=waterway, 9=weed_cluster
-                                    (0, 255, 255), (155,0,0), (155,155,155), (70,0,155) ]).byte()
-    else:
-        print("Error: Unimplemented loss type! Color coding interupted!")
-        sys.exit(0)
+    elif loss_type == "ce":
+        label_colors = torch.tensor([ (0,0,0),# 0=background
+                                # 1=cloud_shadow, 2=double_plant, 3=planter_skip, 4=standing_water, 5=waterway
+                                (255, 0, 0)]).byte()
+    
     r = torch.zeros(size=(image.shape[-2],image.shape[-1]),device=device,dtype=torch.uint8)
     g = torch.zeros(size=(image.shape[-2],image.shape[-1]),device=device,dtype=torch.uint8)
     b = torch.zeros(size=(image.shape[-2],image.shape[-1]),device=device,dtype=torch.uint8)

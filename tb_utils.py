@@ -1,3 +1,5 @@
+from pyexpat import model
+from statistics import mode
 import tensorboard
 import torch
 import numpy as np
@@ -42,19 +44,20 @@ def tb_num_pix_num_classes(tb,count_train,count_train_tb,count_freq,num_channels
 
         count_train_tb += 1
     
-def tb_write_image(tb, num_classes, epoch, input_var, target_var,mask_var, model_output, index, train_part,
-                   tb_img_name,device,use_mask,dataset,loss_type,year):
-    
+def tb_write_image(tb, num_classes, epoch, input_var, target_var, model_output, index, train_part,
+                   tb_img_name,device,use_mask,dataset,loss_type):
+    sigmoid_func = torch.nn.Sigmoid()
     # if num_classes >= 1:
     if loss_type == 'bce':
+        model_output = sigmoid_func(model_output)
         tresholded = model_output[index, :, :, :]>0.5
         out = tresholded.byte()
-        out = decode_segmap2(out,num_classes,device,loss_type,year)
+        out = decode_segmap2(out,num_classes,device,loss_type)
         out = torch.moveaxis(out, 2, 0).detach().cpu().numpy()
 
         target = target_var[index, :, :, :]>0.5
         target = target.byte()
-        target = decode_segmap2(target,num_classes,device,loss_type,year)
+        target = decode_segmap2(target,num_classes,device,loss_type)
         target = torch.moveaxis(target, 2, 0).detach().cpu().numpy()
 
     elif loss_type == 'ce':
@@ -62,53 +65,51 @@ def tb_write_image(tb, num_classes, epoch, input_var, target_var,mask_var, model
         out = tresholded.byte()
         out = torch.argmax(out.squeeze(),dim=0)
 
-        out = decode_segmap2(out,num_classes,device,loss_type,year)
+        out = decode_segmap2(out,num_classes,device,loss_type)
         out = torch.moveaxis(out, 2, 0).detach().cpu().numpy()
 
         target = target_var[index, :, :, :]
         target = target.byte()
         target = torch.argmax(target.squeeze(),dim=0)
-        target = decode_segmap2(target,num_classes,device,loss_type,year) 
+        target = decode_segmap2(target,num_classes,device,loss_type) 
         target = torch.moveaxis(target, 2, 0).detach().cpu().numpy()
 
     else:
         print("Error: Unimplemented loss type! Importing images to tensorboard interupted")
         sys.exit(0)
     
-    image = (input_var[index, :, :, :]).reshape(4, 512, 512)
+    image = (input_var[index, :, :, :]).reshape(5, 512, 512)
     #rgb_image = inv_zscore_func(image,dataset)[0:3,:,:]
     #ir_image = inv_zscore_func(image,dataset)[3,:,:]
     rgb_image = (inv_norm_func(image.detach().cpu())[0:3,:,:]).astype('uint8')
     nir_image = inv_norm_func(image.detach().cpu())[3,:,:]
     nir_image = nir_image[np.newaxis,:,:]
     nir_image =  (np.repeat(nir_image,3,axis=0)).astype('uint8')
-    mask_bool = (mask_var[index]).detach().cpu().numpy().astype('uint8')
+    red_edge_image = inv_norm_func(image.detach().cpu())[4,:,:]
+    red_edge_image = red_edge_image[np.newaxis,:,:]
+    red_edge_image =  (np.repeat(red_edge_image,3,axis=0)).astype('uint8') 
     
-    print('rgb:',rgb_image)
-    print('nir:',nir_image)
-    print('mask:',mask_bool)
-    print("out:",out)
-    print("target:",target)
-    tb.add_image("RGB , NIR, Label, Prediction" + tb_img_name + " " + train_part,
+    
+    tb.add_image("RGB , NIR, Red Edge, Label, Prediction" + tb_img_name + " " + train_part,
                     np.concatenate([rgb_image, np.ones(shape=(3,512,10),dtype=np.uint8)*255 , nir_image, 
-                    np.ones(shape=(3,512,10),dtype=np.uint8)*255,(target*mask_bool).astype('uint8'), np.ones(shape=(3,512,10),dtype=np.uint8)*255 ,(out*mask_bool).astype('uint8')], axis=2),
+                    np.ones(shape=(3,512,10),dtype=np.uint8)*255,red_edge_image,np.ones(shape=(3,512,10),dtype=np.uint8)*255,target.astype('uint8'), np.ones(shape=(3,512,10),dtype=np.uint8)*255 ,out.astype('uint8')], axis=2),
                     epoch, dataformats="CHW")
     
     iou_1 = calc_metrics_tb(model_output[index, :, :, :].unsqueeze(dim=0),
-                                        target_var[index, :, :, :].unsqueeze(dim=0),mask_var[index].unsqueeze(dim=0), num_classes,use_mask)
+                                        target_var[index, :, :, :].unsqueeze(dim=0), num_classes,use_mask)
                                         
     
     iou_1 = torch.tensor(iou_1,dtype = torch.float32)
     tb.add_scalar("Miou/" + tb_img_name + " " + train_part, iou_1, epoch)
 
 
-def tb_image_list_plotting(tb,tb_img_list,num_channels_lab,epoch,input_var,target_var, mask_var, model_output,train_part,device,batch_names,use_mask,dataset,loss_type,year):
+def tb_image_list_plotting(tb,tb_img_list,num_channels_lab,epoch,input_var,target_var,model_output,train_part,device,batch_names,use_mask,dataset,loss_type):
     tb_list = [tb_img for tb_img in tb_img_list if tb_img in batch_names]
     if tb_list:
         for tb_list_index in range(len(tb_list)):
             tb_img_index = batch_names.index(tb_list[tb_list_index])
-            tb_write_image(tb, num_channels_lab, epoch, input_var, target_var, mask_var, model_output,
-                            tb_img_index, train_part, tb_list[tb_list_index],device,use_mask,dataset,loss_type,year)
+            tb_write_image(tb, num_channels_lab, epoch, input_var, target_var, model_output,
+                            tb_img_index, train_part, tb_list[tb_list_index],device,use_mask,dataset,loss_type)
         
         del tb_list, tb_img_index
 

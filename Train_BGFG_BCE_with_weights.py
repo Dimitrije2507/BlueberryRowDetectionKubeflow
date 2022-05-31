@@ -33,7 +33,7 @@ def set_seed(seed):
     return torch_manual_seed, torch_manual_seed_cuda
 
 def main(lambda_parametri, stepovi, lr,p_index):
-    print("promena")
+    
     tmp = get_args('train')
     globals().update(tmp)
     base_folder_path = os.getcwd()
@@ -45,7 +45,7 @@ def main(lambda_parametri, stepovi, lr,p_index):
     ### data loading ###
     ####################
     
-    train_loader, valid_loader = data_loading(ime_foldera_za_upis,numpy_path,numpy_valid_path,binary,background_flag)
+    train_loader, valid_loader = data_loading(ime_foldera_za_upis,numpy_path,numpy_valid_path,binary)
 
     ####################
     after_data_loading_prints(lr,ime_foldera_za_upis,train_loader,valid_loader)
@@ -61,7 +61,7 @@ def main(lambda_parametri, stepovi, lr,p_index):
     segmentation_net = model_init(num_channels,num_channels_lab,img_h,img_w,zscore,net_type,device,server,GPU_list)
     segmentation_net = torch.nn.DataParallel(segmentation_net, device_ids=[0]).to(device)
     
-    print(summary(segmentation_net,(4,512,512)))
+    print(summary(segmentation_net,(5,512,512)))
     ############################
     ### model initialization ###
     ############################
@@ -72,7 +72,7 @@ def main(lambda_parametri, stepovi, lr,p_index):
     ### Loss initialization ###
     ############################
 
-    criterion = loss_init(use_weights,loss_type,dataset,num_channels_lab,device,year)
+    criterion = loss_init(use_weights,loss_type,dataset,num_channels_lab,device,use_mask)
 
     if server:
         start_train = torch.cuda.Event(enable_timing=True)
@@ -108,13 +108,13 @@ def main(lambda_parametri, stepovi, lr,p_index):
             batch_iou_bg = torch.zeros(size=(len(train_loader.dataset.img_names),2),device=device,dtype=torch.float32)
         
 
-        for input_var, target_var, batch_names_train, mask_train in train_loader:
+        for input_var, target_var, batch_names_train in train_loader:
         
             set_zero_grad(segmentation_net)
 
             model_output = segmentation_net.forward(input_var)
-            mask_train = torch.logical_and(mask_train[:,0,:,:],mask_train[:,1,:,:])
-            loss = loss_calc(loss_type,criterion,model_output,target_var,mask_train,num_channels_lab,use_mask)
+            # mask_train = torch.logical_and(mask_train[:,0,:,:],mask_train[:,1,:,:])
+            loss = loss_calc(loss_type,criterion,model_output,target_var,num_channels_lab,use_mask)
             loss.backward()
 
             optimizer.step()  # mnozi sa grad i menja weightove
@@ -125,7 +125,7 @@ def main(lambda_parametri, stepovi, lr,p_index):
             
             index_end = index_start + len(batch_names_train)
             if loss_type == 'bce':
-                batch_iou[index_start:index_end, :],batch_iou_bg[index_start:index_end]= calc_metrics_pix(model_output, target_var,mask_train, num_channels_lab,device,use_mask,loss_type)
+                batch_iou[index_start:index_end, :],batch_iou_bg[index_start:index_end]= calc_metrics_pix(model_output, target_var, num_channels_lab,device,use_mask,loss_type)
             elif loss_type == 'ce':
                 batch_iou[index_start:index_end, :]= calc_metrics_pix(model_output, target_var,mask_train, num_channels_lab, device, use_mask,loss_type)
             else:
@@ -146,7 +146,7 @@ def main(lambda_parametri, stepovi, lr,p_index):
             #########################################################################
 
             tb_image_list_plotting(tb, tb_img_list, num_channels_lab, epoch, input_var, target_var,\
-                 mask_train, model_output, train_part, device, batch_names_train,use_mask,dataset,loss_type,year)
+                 model_output, train_part, device, batch_names_train,use_mask,dataset,loss_type)
         
             count_train += 1
             print("*", end="")

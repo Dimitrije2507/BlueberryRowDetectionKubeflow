@@ -24,7 +24,7 @@ def pretraining_prints(p_index,lr,stepovi,lambda_parametri,batch_size,loss_type)
         os.mkdir(logs_path)
     global scheduler_lr
     # logs_path = base_folder_path + "/logs/" + script_name + "/" + today  # path to the folder that we want to save the logs for Tensorboard
-    logs_path = base_folder_path + "/logs/" + script_name + "/"+ str(p_index) + "_"+ today + "_lr_"+str(lr) + "_step_na_" + str(stepovi) +"_epoha_" + "lambda parametar_" + str(lambda_parametri) +"_batch_size_"+str(batch_size)+ "_sched_" + str(scheduler_lr) + "_loss_" + loss_type  # path to the folder that we want to save the logs for Tensorboard
+    logs_path = base_folder_path + "/logs/" + script_name + "/"+ str(p_index) + "_"+ today + "_lr_"+str(lr) + "_step_na_" + str(stepovi) +"_epoha_" + "lambda_parametar_" + str(lambda_parametri) +"_batch_size_"+str(batch_size)+ "_sched_" + str(scheduler_lr) + "_loss_" + loss_type  # path to the folder that we want to save the logs for Tensorboard
     if not os.path.exists(logs_path):
         os.mkdir(logs_path)
     elif os.path.exists(logs_path):

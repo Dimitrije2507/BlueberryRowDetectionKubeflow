@@ -1,3 +1,4 @@
+from pyexpat import model
 import numpy as np
 import torch
 import os,sys,time
@@ -39,7 +40,7 @@ def final_metric_calculation(tensorbd='None',loss_type = 'bce',epoch=0,num_chann
     
 
 
-def iou_pix(target, pred, mask_var, use_mask):
+def iou_pix(target, pred, use_mask):
     
     if torch.sum(target) == 0 and torch.sum(pred) == 0:
         arr = torch.full(size=(target.shape[0], target.shape[1]),fill_value=2)
@@ -57,28 +58,29 @@ def iou_pix(target, pred, mask_var, use_mask):
             union = torch.logical_or(target.bool(), pred.bool()).sum() 
             return intersection , union 
         
-def calc_metrics_pix(model_output, target_var, mask_var, num_classes,device,use_mask,loss_type):
-
+def calc_metrics_pix(model_output, target_var, num_classes,device,use_mask,loss_type):
+    sigmoid_func = torch.nn.Sigmoid()
     iou_res = torch.zeros((target_var.shape[0], target_var.shape[1] * 2),device=device)
     if loss_type == 'bce':
         iou_res_bg = torch.zeros((target_var.shape[0], 2),device=device)
+        model_output = sigmoid_func(model_output)
     for im_number in range(target_var.shape[0]):
         
         tresholded = model_output[im_number, :, :, :]>0.5
-        tresholded = tresholded.byte()
-        tresholded_tmp = torch.max(tresholded,dim = 0).values
+        tresholded_tmp = tresholded.byte()
+        
         if loss_type=='bce':
             # bg_tresholded = torch.tensor(tresholded_tmp == 0).byte()
             bg_tresholded = (tresholded_tmp==0)
             bg_target_var = torch.max(target_var[im_number,:,:,:],dim = 0).values
             bg_target_var = (bg_target_var==0)
             # bg_target_var = torch.tensor(bg_target_var == 0).byte()
-            iou_res_bg[ im_number, 0], iou_res_bg[ im_number, 1] = iou_pix( bg_target_var, bg_tresholded, mask_var[im_number],use_mask)
+            iou_res_bg[ im_number, 0], iou_res_bg[ im_number, 1] = iou_pix( bg_target_var, bg_tresholded,use_mask)
         
         ind_iou = 0
         for klasa_idx in range(num_classes):
 
-            iou_res[im_number, ind_iou], iou_res[im_number, ind_iou + 1] = iou_pix(target_var[im_number, klasa_idx, :, :], tresholded[klasa_idx,:,:],mask_var[im_number],use_mask)
+            iou_res[im_number, ind_iou], iou_res[im_number, ind_iou + 1] = iou_pix(target_var[im_number, klasa_idx, :, :], tresholded[klasa_idx,:,:],use_mask)
             ind_iou += 2
     if loss_type =='ce':       
         return iou_res
@@ -89,9 +91,10 @@ def calc_metrics_pix(model_output, target_var, mask_var, num_classes,device,use_
         sys.exit(0)
 
 
-def calc_metrics_tb(model_output, target_var, mask_var, num_classes,use_mask):
+def calc_metrics_tb(model_output, target_var, num_classes,use_mask):
     miou_mean = []
-
+    sigmoid_func = torch.nn.Sigmoid()
+    model_output = sigmoid_func(model_output)
     for batch in range(target_var.shape[0]):    
         miou_res = torch.zeros([num_classes])
         tresholded = model_output[batch, :, :, :]>0.5
@@ -99,7 +102,7 @@ def calc_metrics_tb(model_output, target_var, mask_var, num_classes,use_mask):
         
         for klasa_idx in range(num_classes):
 
-            miou_res[klasa_idx] = iou_coef(target_var.permute(0, 2, 3, 1)[batch, :, :, klasa_idx].byte(),tresholded[klasa_idx,:,:],mask_var[batch,:,:],use_mask)
+            miou_res[klasa_idx] = iou_coef(target_var.permute(0, 2, 3, 1)[batch, :, :, klasa_idx].byte(),tresholded[klasa_idx,:,:],use_mask)
  
         miou_res = [x for x in miou_res if torch.isnan(x) == False]
         
@@ -117,7 +120,7 @@ def dice_coef(y_true, y_pred):
     smooth = 0
     return (2. * intersection + smooth) / (torch.sum(y_true_f) + torch.sum(y_pred_f) + smooth)
 
-def iou_coef(y_true,y_pred,mask_var, use_mask):
+def iou_coef(y_true,y_pred, use_mask):
     if use_mask:
 
         y_true_f = y_true[mask_var]
