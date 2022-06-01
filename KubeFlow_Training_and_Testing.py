@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from torch import sigmoid
 import torch.utils.data.dataloader
 from torch.utils.tensorboard import SummaryWriter
 import random
@@ -291,11 +292,38 @@ def main(putanja_train, putanja_val,p_index):
         
         test_loader = AgroVisionDataLoader(img_size, numpy_test_path, img_data_format, shuffle_state,
                                            batch_size, device, zscore,binary,dataset)
-        uporedna_tabela = pd.DataFrame()
-        IOU = run_testing(segmentation_net, test_loader, ime_foldera_za_upis, device, num_channels_lab, classes_labels,classes_labels2,
-                     criterion_1, loss_type, tb, zscore)
+        
+        tmp = get_args('test')
+        globals().update(tmp)
+
+        segmentation_net.eval()
+
+    
+    
+        ispis = ("_____________________________________________________________Testing Start ")
+        print(ispis)
+        upisivanje(ispis, ime_foldera_za_upis)
+
+        index_start = 0
+        iou_res = torch.zeros([len(test_loader.dataset.img_names), num_classes * 2])
+        if loss_type == 'bce':
+            iou_res_bg = torch.zeros([len(test_loader.dataset.img_names),2])
+        global test_losses
+        sigmoid_func = torch.nn.Sigmoid()
+
+        for input_var, target_var, img_names_test in test_loader:
+            model_output = segmentation_net(input_var)
+            model_output = (sigmoid_func(model_output)>0.5).byte()
+            test_loss = loss_calc(loss_type, criterion_1, model_output,target_var,num_channels_lab = num_classes,use_mask= use_mask)
+        # cuvanje loss-a kroz iteracije
+            test_losses.append(test_loss.data)
+        
+        # uporedna_tabela = pd.DataFrame()
+        # IOU = run_testing(segmentation_net, test_loader, ime_foldera_za_upis, device, num_channels_lab, classes_labels,classes_labels2,
+        #              criterion_1, loss_type, tb, zscore)
 
     end_prints(ime_foldera_za_upis)
+    return test_losses,model_output
     # return IOU
     # VISUALIZE TENSORBOARD
     ## tensorboard dev upload --logdir=logs/Test_Overfit
