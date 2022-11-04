@@ -92,7 +92,7 @@ class AgroVisionDataSet(Dataset):
                  root_dir, data_format, shuffle_state,
                  transform, device,zscore,binary,dataset):
 
-        imgs_num = int(len(os.listdir(root_dir)))
+        imgs_num = int(len(os.listdir(root_dir)))//1000+2
         img_paths_1 = os.listdir(root_dir)
         img_paths_1 = shuffle(img_paths_1, random_state=shuffle_state)
         img_paths = img_paths_1[:imgs_num]

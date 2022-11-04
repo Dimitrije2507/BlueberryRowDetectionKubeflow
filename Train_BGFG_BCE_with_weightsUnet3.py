@@ -77,7 +77,7 @@ def main(putanja_train, putanja_val, putanja_test, p_index,lr,lambda_p,step, num
     segmentation_net = model_init(num_channels,num_channels_lab,img_h,img_w,zscore,net_type,device,server,GPU_list)
     segmentation_net = torch.nn.DataParallel(segmentation_net, device_ids=[0]).to(device)
     
-    print(summary(segmentation_net,(5,512,512)))
+    # print(summary(segmentation_net,(5,512,512)))
     ############################
     ### model initialization ###
     ############################
@@ -318,7 +318,7 @@ def main(putanja_train, putanja_val, putanja_test, p_index,lr,lambda_p,step, num
     # # tensorboard --logdir=logs/Train_BCE_with_weights --host localhost
 
 if __name__ == '__main__':
-    config_func_unet3(server=False)
+    config_func_unet3(server=True)
     # lr = [1e-2,1e-3,1e-4]
     lr = [1e-3] 
     lambda_parametar = [1]
