@@ -76,7 +76,7 @@ def main(putanja_train, putanja_val, putanja_test, p_index,lr,lambda_p,step, num
     ############################
     # print(device)
     segmentation_net = model_init(num_channels,num_channels_lab,img_h,img_w,zscore,net_type,device,server,GPU_list)
-    segmentation_net = torch.nn.DataParallel(segmentation_net, device_ids=[0]).to('cuda')
+    segmentation_net = torch.nn.DataParallel(segmentation_net, device_ids=[0]).to(device)
     
     # print(summary(segmentation_net,(5,512,512)))
     ############################
@@ -129,7 +129,7 @@ def main(putanja_train, putanja_val, putanja_test, p_index,lr,lambda_p,step, num
         
             set_zero_grad(segmentation_net)
             
-            model_output = segmentation_net.forward(input_var.to('cuda'))
+            model_output = segmentation_net.forward(input_var)
             # mask_train = torch.logical_and(mask_train[:,0,:,:],mask_train[:,1,:,:])
             loss = loss_calc(loss_type,criterion,model_output,target_var,num_channels_lab,use_mask)
             loss.backward()
