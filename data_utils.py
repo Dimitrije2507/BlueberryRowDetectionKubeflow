@@ -22,14 +22,14 @@ def get_args(phase,net_type):
     
     if net_type == 'UNet3':
         if phase == 'test':
-            json_path = r"/home/stefanovicd/DeepSleep/agrovision/BorovniceUnetBS/config_test_Unet3.json"
+            json_path = r"config_test_Unet3.json"
         else:
-            json_path = r"/home/stefanovicd/DeepSleep/agrovision/BorovniceUnetBS/config_Unet3.json"
+            json_path = r"config_Unet3.json"
     elif net_type == "UNet++":
         if phase == 'test':
-            json_path = r"/home/stefanovicd/DeepSleep/agrovision/BorovniceUnetBS/config_test.json"
+            json_path = r"config_test.json"
         else:
-            json_path = r"/home/stefanovicd/DeepSleep/agrovision/BorovniceUnetBS/config.json"
+            json_path = r"config.json"
     else:
         print('greska:')
         print(net_type)
@@ -142,7 +142,7 @@ class AgroVisionDataSet(Dataset):
             sys.exit(0)
             
         
-        return img, label, img_name
+        return img.to(device), label.to(device), img_name
 
 
 class AgroVisionDataLoader(DataLoader):
