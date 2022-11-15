@@ -14,6 +14,7 @@ from tb_utils import *
 from metrics_utils import*
 from configUnet3 import config_func_unet3
 # from focal_loss import FocalLoss2
+import time
 
 def upisivanje(ispis, ime_foldera):
     fff = open(ime_foldera, "a")
@@ -52,7 +53,7 @@ def main(putanja_train, putanja_val, putanja_test, p_index,lr,lambda_p,step, num
 
     tmp = get_args('train','UNet3')
     globals().update(tmp)
-    print(device)
+    # print(device)
     base_folder_path = os.getcwd()
     base_folder_path = base_folder_path.replace("\\", "/")
 
@@ -117,7 +118,8 @@ def main(putanja_train, putanja_val, putanja_test, p_index,lr,lambda_p,step, num
         if server:
             start_train.record()
             torch.cuda.empty_cache()
-        
+        else:
+            start_train = time.time()
         index_start = 0
         
         batch_iou = torch.zeros(size=(len(train_loader.dataset.img_names),num_channels_lab*2),device=device,dtype=torch.float32)
@@ -188,7 +190,11 @@ def main(putanja_train, putanja_val, putanja_test, p_index,lr,lambda_p,step, num
             ispis = ("Time Elapsed For Train epoch " + str(epoch) + " " + str(start_train.elapsed_time(end_train) / 1000))
             print(ispis)
             upisivanje(ispis, ime_foldera_za_upis)
-
+        else:
+            end_train = time.time()
+            ispis = ("Time Elapsed For Train epoch " + str(epoch) + " " + str(end_train-start_train))
+            print(ispis)
+            upisivanje(ispis, ime_foldera_za_upis)
         all_train_losses[epoch] = (torch.mean(torch.tensor(train_losses,dtype = torch.float32)))
         all_lr[epoch] = (optimizer.param_groups[0]['lr'])
 
@@ -207,7 +213,8 @@ def main(putanja_train, putanja_val, putanja_test, p_index,lr,lambda_p,step, num
 
         if server:
             start_val.record()
-
+        else:
+            start_val = time.time()
         index_start = 0
         
         batch_iou = torch.zeros(size=(len(valid_loader.dataset.img_names),num_channels_lab*2),device=device,dtype=torch.float32)
@@ -257,7 +264,7 @@ def main(putanja_train, putanja_val, putanja_test, p_index,lr,lambda_p,step, num
         else:
             print("Error: Unimplemented loss type!")
             sys.exit(0)
-
+        
         if server:
             end_val.record()
             torch.cuda.synchronize()
@@ -265,7 +272,12 @@ def main(putanja_train, putanja_val, putanja_test, p_index,lr,lambda_p,step, num
             ispis = ("Time Elapsed For Valid epoch " + str(epoch) + " " + str(start_val.elapsed_time(end_val) / 1000))
             print(ispis)
             upisivanje(ispis, ime_foldera_za_upis)
-
+        else:
+            end_val = time.time()
+            print("] ", end="")
+            ispis = ("Time Elapsed For Valid epoch " + str(epoch) + " " + str(str(end_val-start_val)))
+            print(ispis)
+            upisivanje(ispis, ime_foldera_za_upis)
         epoch_list[epoch] = epoch
         all_validation_losses[epoch] = (torch.mean(torch.tensor(validation_losses,dtype = torch.float32)))
 
@@ -319,7 +331,7 @@ def main(putanja_train, putanja_val, putanja_test, p_index,lr,lambda_p,step, num
     # # tensorboard --logdir=logs/Train_BCE_with_weights --host localhost
 
 if __name__ == '__main__':
-    config_func_unet3(server=True)
+    config_func_unet3(server=False)
     # lr = [1e-2,1e-3,1e-4]
     lr = [1e-3] 
     lambda_parametar = [1]
