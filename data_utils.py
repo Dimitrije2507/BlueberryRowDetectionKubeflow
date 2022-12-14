@@ -27,9 +27,9 @@ def get_args(phase,net_type):
             json_path = r"config_Unet3.json"
     elif net_type == "UNet++":
         if phase == 'test':
-            json_path = r"config_test.json"
+            json_path = r"config_test_Unet3.json"
         else:
-            json_path = r"config.json"
+            json_path = r"config_Unet3.json"
     else:
         print('greska:')
         print(net_type)

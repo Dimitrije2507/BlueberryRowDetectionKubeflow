@@ -249,7 +249,7 @@ def postprocessing_block(GeoTiff,y0,y1,x0,x1,final_mask, geotransform, projectio
     final_mask[y0:y1,x0:x1] = copy.deepcopy(Final_prediction)
     # final_mask[y0 - row_pad:y_end + row_pad, x_start - column_pad:x_end + column_pad] = copy.deepcopy(image)
     driver = gdal.GetDriverByName('GTiff')
-    tmp_raster = driver.Create('test_parcel.tif', final_mask.shape[1], final_mask.shape[0], 1, gdal.GDT_Byte)
+    tmp_raster = driver.Create('unetpp_test_parcel.tif', final_mask.shape[1], final_mask.shape[0], 1, gdal.GDT_Byte)
     tmp_raster.SetGeoTransform(geotransform)
     tmp_raster.SetProjection(projection)
     srcband = tmp_raster.GetRasterBand(1)
@@ -274,6 +274,7 @@ def main(input_files_type=None):
         ch_blue = np.load(in_test_raster_b)
         ch_nir = np.load(in_test_raster_nir)
         ch_rededge = np.load(in_test_raster_rededge)
+        cropped_mask = []
     
     else:
         in_raster_r = r"/home/stefanovicd/DeepSleep/agrovision/DetekcijaBorovnica/GeoTiffs/Babe_registrated_corrected_transparent_mosaic_red.tif"
@@ -390,8 +391,9 @@ def main(input_files_type=None):
     
     load_test_data_pth = copy.deepcopy(save_test_data_pth+"/img")
     save_pred_data_pth = r"/home/stefanovicd/DeepSleep/agrovision/DetekcijaBorovnica/test_pred_folder"
-    model_pth = r"/home/stefanovicd/DeepSleep/agrovision/BorovniceUnetBS/logs/Train_BGFG_BCE_with_weights/0_13_11_2022_01_36_47_lr_1e-05_step_na_5_epoha_lambda_parametar_1_batch_size_4_sched_multiplicative_loss_bce/NN_model_ep_40_Train_BGFG_BCE_with_weights/fully_trained_model_epochs_39_lr_1e-05_step_5_Lambda_parametar_1_loss_type_bce_arhitektura_UNet++_batch_size_4.pt" 
-    
+    # model_pth = r"/home/stefanovicd/DeepSleep/agrovision/BorovniceUnetBS/logs/Train_BGFG_BCE_with_weights/0_13_11_2022_01_36_47_lr_1e-05_step_na_5_epoha_lambda_parametar_1_batch_size_4_sched_multiplicative_loss_bce/NN_model_ep_40_Train_BGFG_BCE_with_weights/fully_trained_model_epochs_39_lr_1e-05_step_5_Lambda_parametar_1_loss_type_bce_arhitektura_UNet++_batch_size_4.pt" 
+    # model_pth = r"/home/stefanovicd/DeepSleep/BlueberryRowDetectionKubeflow/logs/Train_BGFG_BCE_with_weightsUnet3/0_02_12_2022_11_23_55_lr_1e-05_step_na_5_epoha_lambda_parametar_1_batch_size_4_sched_multiplicative_loss_bce/NN_model_ep_40_Train_BGFG_BCE_with_weightsUnet3/fully_trained_model_epochs_39_lr_1e-05_step_5_Lambda_parametar_1_loss_type_bce_arhitektura_UNet3_batch_size_4.pt"
+    model_pth = r"/home/stefanovicd/DeepSleep/BlueberryRowDetectionKubeflow/logs/Train_BGFG_BCE_with_weightsUnet3/0_02_12_2022_12_25_21_lr_1e-05_step_na_5_epoha_lambda_parametar_1_batch_size_4_sched_multiplicative_loss_bce/NN_model_ep_40_Train_BGFG_BCE_with_weightsUnet3/fully_trained_model_epochs_39_lr_1e-05_step_5_Lambda_parametar_1_loss_type_bce_arhitektura_UNet++_batch_size_4.pt"
     test_block(load_test_data_pth,model_pth,save_pred_data_pth)
     
     load_pred_data_pth = copy.deepcopy(save_pred_data_pth)

@@ -302,7 +302,7 @@ def main(putanja_train, putanja_val, putanja_test, p_index,lr,lambda_p,step, num
         torch.cuda.empty_cache()
 
     post_training_prints(ime_foldera_za_upis)
-    plt.figure(),plt.plot(all_train_losses),plt.title("Loss per epoch for UNet"),plt.plot(all_validation_losses), plt.legend(["Train loss","Validation loss"])
+    plt.figure(),plt.plot(all_train_losses),plt.title("Loss per epoch for UNet++"),plt.plot(all_validation_losses), plt.legend(["Train loss","Validation loss"])
     plt.show()
     plt.savefig("./model_loss_training_unet_epochs_"+str(epochs)+"_lr_"+str(lr)+"_step_"+str(stepovi)+"_Lambda_parametar_"+str(lambda_parametri)+"_loss_type_"+str(loss_type)+"_arhitektura_"+str(net_type)+"_batch_size_"+str(batch_size)+".png")
 
@@ -331,14 +331,14 @@ def main(putanja_train, putanja_val, putanja_test, p_index,lr,lambda_p,step, num
     # # tensorboard --logdir=logs/Train_BCE_with_weights --host localhost
 
 if __name__ == '__main__':
-    config_func_unet3(server=False)
+    config_func_unet3(server=True)
     # lr = [1e-2,1e-3,1e-4]
-    lr = [1e-3] 
+    lr = [1e-5] 
     lambda_parametar = [1]
     stepovi_arr = [5]
-    num_epochs = [10]
+    num_epochs = [40]
     loss_type = ['bce']
-    Batch_size = [8]
+    Batch_size = [4]
     # classes_labels2 = ['background','foreground']
     # classes_labels2 = ['background','cloud_shadow','double_plant','planter_skip','standing_water','waterway','weed_cluster']
     uporedna_tabela = pd.DataFrame()

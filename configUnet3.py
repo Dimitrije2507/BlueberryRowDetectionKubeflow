@@ -69,7 +69,7 @@ def config_func_unet3(server=True):
 
     loss_type = 'bce'       # Indicates loss type we want to use: bce, ce, ce_1
 
-    net_type = "UNet3"      # Indicates Architecture that we want to use: UNet3, Unet_orig,UNet3_modified...
+    net_type = "UNet++"      # Indicates Architecture that we want to use: UNet3, Unet_orig,UNet3_modified...
 
     img_data_format = '.npy'  # Indicated the type of data we use as input
 
