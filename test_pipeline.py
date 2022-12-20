@@ -274,7 +274,7 @@ def main(input_files_type=None):
         ch_blue = np.load(in_test_raster_b)
         ch_nir = np.load(in_test_raster_nir)
         ch_rededge = np.load(in_test_raster_rededge)
-        cropped_mask = []
+        cropped_mask = r'/home/stefanovicd/DeepSleep/agrovision/DetekcijaBorovnica/shp/cropped_mask.npy'
     
     else:
         in_raster_r = r"/home/stefanovicd/DeepSleep/agrovision/DetekcijaBorovnica/GeoTiffs/Babe_registrated_corrected_transparent_mosaic_red.tif"
