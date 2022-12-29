@@ -51,6 +51,18 @@ def load_checkpoint(checkpoint,model):
             model.load_state_dict(new_checkpoint)
 
 
+def add_feature_to_shapefile(outLayer,geometry,index):
+
+    outLayerDefn = outLayer.GetLayerDefn()
+    new_feature = ogr.Feature(outLayerDefn)
+    new_feature.SetGeometry(geometry)
+    new_feature.SetField('ID', int(index))
+    
+    outLayer.CreateFeature(new_feature)
+    new_feature = None
+
+    return outLayer
+
 def augmentation_and_saving(img,label,path_img,path_label,testing_flag = True,png_flag = False):
 
     if png_flag:
@@ -202,6 +214,9 @@ def test_block(load_data_pth,model_pth,save_pred_pth):
     print("Test block ended")
 def postprocessing_block(GeoTiff,y0,y1,x0,x1,final_mask, geotransform, projection, load_pred_pth,save_final_GeoTiff_pth,save_final_colored_GeoTiff_pth,save_final_shp_pth):
     print("Postprocessing block started")
+    
+    colors_grey = np.array([255, 200, 155, 100, 55], dtype="uint8")
+
 
     H = np.shape(GeoTiff[:,:,0])[0]
     W = np.shape(GeoTiff[:,:,0])[1]
@@ -246,7 +261,7 @@ def postprocessing_block(GeoTiff,y0,y1,x0,x1,final_mask, geotransform, projectio
 
     srsProj = osr.SpatialReference()
     srsProj.ImportFromEPSG(32634)
-    final_mask[y0:y1,x0:x1] = copy.deepcopy(Final_prediction)
+    final_mask[y0:y1,x0:x1] = copy.deepcopy(Final_prediction)*255
     # final_mask[y0 - row_pad:y_end + row_pad, x_start - column_pad:x_end + column_pad] = copy.deepcopy(image)
     driver = gdal.GetDriverByName('GTiff')
     tmp_raster = driver.Create('unetpp_test_parcel.tif', final_mask.shape[1], final_mask.shape[0], 1, gdal.GDT_Byte)
@@ -256,6 +271,77 @@ def postprocessing_block(GeoTiff,y0,y1,x0,x1,final_mask, geotransform, projectio
     srcband.WriteArray(final_mask)
     srcband.FlushCache()
     print("Postprocessing block ended")
+
+    ind_list = np.array([0])
+    map_index = dict({0: 0})
+    geometries = []
+    union = []
+    for i in range(len(ind_list)):
+        geometries.append(ogr.Geometry(ogr.wkbMultiPolygon))
+
+    outShapefile = "unetpp_test_parcel_tmp.shp"
+    outDriver = ogr.GetDriverByName('ESRI Shapefile')
+    if os.path.exists(outShapefile):
+        outDriver.DeleteDataSource(outShapefile)
+
+
+    outDataSource = outDriver.CreateDataSource(outShapefile)
+    outLayer = outDataSource.CreateLayer("zones", geom_type=ogr.wkbMultiPolygon, srs=srsProj)
+    outLayer.CreateField(ogr.FieldDefn('ID', ogr.OFTInteger))
+    options = ['8CONNECTED=8']
+
+    result = gdal.Polygonize(srcband, None, outLayer, 0, options, callback=None)
+    outLayer.ResetReading()
+
+    for feature in outLayer:
+        if feature.GetField('ID') != 0:
+            index = np.where(colors_grey == feature.GetField('ID'))[0][0]
+            ind = map_index[index]
+            geom = feature.GetGeometryRef()
+
+            if geom.GetGeometryName() == 'MULTIPOLYGON':
+                for geom_part in geom:
+                    geometries[ind].AddGeometry(geom_part.SimplifyPreserveTopology(0.05))
+            else:
+                geometries[ind].AddGeometry(geom.SimplifyPreserveTopology(0.05))
+
+    for i in range(len(ind_list)):
+        union.append(geometries[i].UnionCascaded())
+        print(geometries[i].UnionCascaded())
+
+    outShapefile_new = "unetpp_test_parcel.shp"
+    outDriver_new = ogr.GetDriverByName('ESRI Shapefile')
+    if os.path.exists(outShapefile_new):
+        outDriver_new.DeleteDataSource(outShapefile_new)
+
+    outDataSource_new = outDriver_new.CreateDataSource(outShapefile_new)
+    outLayer_new = outDataSource_new.CreateLayer("zones_new", geom_type=ogr.wkbMultiPolygon, srs=srsProj)
+    outLayer_new.CreateField(ogr.FieldDefn('ID', ogr.OFTInteger))
+
+    ind = int(0)
+    for i in range(len(ind_list)):
+        outLayer_new = add_feature_to_shapefile(outLayer_new, union[i], ind)
+        ind = ind + 1
+
+    # out_shape = 'unetpp_test_parcel.shp'
+    # outShapefile_new = out_shape # gde zelimo da se cuva i pod kojim nazivom u shape fajlu
+    # outDriver_new = ogr.GetDriverByName('ESRI Shapefile')
+    # if os.path.exists(outShapefile_new):
+    #     outDriver_new.DeleteDataSource(outShapefile_new)
+
+    # outDataSource_new = outDriver_new.CreateDataSource(outShapefile_new)
+    # outLayer_new = outDataSource_new.CreateLayer("zones_new", geom_type=ogr.wkbMultiPolygon, srs=srsProj)
+    # outLayer_new.CreateField(ogr.FieldDefn('ID', ogr.OFTInteger))
+    
+    # ind = int(0)
+    # for i in range(len(ind_list)):
+    #     outLayer_new = add_feature_to_shapefile(outLayer_new, union[i], ind, calc_stats)
+    #     ind = ind + 1
+
+    outDataSource_new = None
+
+
+
 
 
 def main(input_files_type=None):
