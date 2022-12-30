@@ -212,7 +212,7 @@ def test_block(load_data_pth,model_pth,save_pred_pth):
 
     # model.load_state_dict(torch.load(r'/home/stefanovicd/DeepSleep/GraphNeuralNetworks/Deeplab-Large-FOV-master/saved_models/GCNModel_2000segmenata_5Sobel_kanala_treningVeci_test_h128_lr2nule_k16.pt',map_location=torch.device('cpu')))
     print("Test block ended")
-def postprocessing_block(GeoTiff,y0,y1,x0,x1,final_mask, geotransform, projection, load_pred_pth,save_final_GeoTiff_pth,save_final_colored_GeoTiff_pth,save_final_shp_pth):
+def postprocessing_block(GeoTiff,full_geotiff,y0,y1,x0,x1,final_mask, geotransform, projection, load_pred_pth,save_final_GeoTiff_pth,save_final_colored_GeoTiff_pth,save_final_shp_pth):
     print("Postprocessing block started")
     
     colors_grey = np.array([255, 200, 155, 100, 55], dtype="uint8")
@@ -247,21 +247,29 @@ def postprocessing_block(GeoTiff,y0,y1,x0,x1,final_mask, geotransform, projectio
                 print('Final test sample '+str(counter))
                 counter+=1
 
-    # # create the 3-band raster file
-    # dst_ds = gdal.GetDriverByName('GTiff').Create('myGeoTIFF.tif', W, H, 1, gdal.GDT_Byte)
+    # create the 3-band raster file
+    
+    final_mask[y0:y1,x0:x1] = copy.deepcopy(Final_prediction)*255
+    # full_geotiff[:,:,0][final_mask//255] = 255
 
-    # dst_ds.SetGeoTransform(geotransform)    # specify coords
-    # srs = osr.SpatialReference()            # establish encoding
-    # srs.ImportFromEPSG(32634)                # WGS84 lat/long
-    # dst_ds.SetProjection(srs.ExportToWkt()) # export coords to file
-    # dst_ds.GetRasterBand(1).WriteArray(Final_prediction)   # write r-band to the raster
-    # # dst_ds.GetRasterBand(2).WriteArray(g_pixels)   # write g-band to the raster
-    # # dst_ds.GetRasterBand(3).WriteArray(b_pixels)   # write b-band to the raster
-    # dst_ds.FlushCache()                     # write to disk
-
+    r = full_geotiff[:,:,0]
+    g = full_geotiff[:,:,1]
+    b = full_geotiff[:,:,2]
+    
+    r[final_mask>0]=255
+    print("red band done")
+    b[final_mask>0]=0
+    print("green band done")
+    g[final_mask>0]=0
+    print("blue band done")
+    
+    # plt.imsave('full_geotiff_colored.png',np.stack([r,g,b],axis=2).astype('uint8'))
+    
+    
     srsProj = osr.SpatialReference()
     srsProj.ImportFromEPSG(32634)
-    final_mask[y0:y1,x0:x1] = copy.deepcopy(Final_prediction)*255
+    
+
     # final_mask[y0 - row_pad:y_end + row_pad, x_start - column_pad:x_end + column_pad] = copy.deepcopy(image)
     driver = gdal.GetDriverByName('GTiff')
     tmp_raster = driver.Create('unetpp_test_parcel.tif', final_mask.shape[1], final_mask.shape[0], 1, gdal.GDT_Byte)
@@ -272,6 +280,19 @@ def postprocessing_block(GeoTiff,y0,y1,x0,x1,final_mask, geotransform, projectio
     srcband.FlushCache()
     print("Postprocessing block ended")
 
+    
+    geotiffff = gdal.GetDriverByName('GTiff').Create('rgb_masked_with_red.tif',final_mask.shape[1], final_mask.shape[0], 3, gdal.GDT_Byte)
+
+    geotiffff.SetGeoTransform(geotransform)    # specify coords
+    srs = osr.SpatialReference()            # establish encoding
+    srs.ImportFromEPSG(32634)                # WGS84 lat/long
+    geotiffff.SetProjection(srs.ExportToWkt()) # export coords to file
+    geotiffff.GetRasterBand(1).WriteArray(r)   # write r-band to the raster
+    geotiffff.GetRasterBand(2).WriteArray(g)   # write g-band to the raster
+    geotiffff.GetRasterBand(3).WriteArray(b)   # write b-band to the raster
+    geotiffff.FlushCache()                     # write to disk
+
+    
     ind_list = np.array([0])
     map_index = dict({0: 0})
     geometries = []
@@ -323,22 +344,10 @@ def postprocessing_block(GeoTiff,y0,y1,x0,x1,final_mask, geotransform, projectio
         outLayer_new = add_feature_to_shapefile(outLayer_new, union[i], ind)
         ind = ind + 1
 
-    # out_shape = 'unetpp_test_parcel.shp'
-    # outShapefile_new = out_shape # gde zelimo da se cuva i pod kojim nazivom u shape fajlu
-    # outDriver_new = ogr.GetDriverByName('ESRI Shapefile')
-    # if os.path.exists(outShapefile_new):
-    #     outDriver_new.DeleteDataSource(outShapefile_new)
-
-    # outDataSource_new = outDriver_new.CreateDataSource(outShapefile_new)
-    # outLayer_new = outDataSource_new.CreateLayer("zones_new", geom_type=ogr.wkbMultiPolygon, srs=srsProj)
-    # outLayer_new.CreateField(ogr.FieldDefn('ID', ogr.OFTInteger))
-    
-    # ind = int(0)
-    # for i in range(len(ind_list)):
-    #     outLayer_new = add_feature_to_shapefile(outLayer_new, union[i], ind, calc_stats)
-    #     ind = ind + 1
-
     outDataSource_new = None
+
+    RGB_raster = GeoTiff[:,:,0:3]
+    RGB_raster
 
 
 
@@ -458,18 +467,23 @@ def main(input_files_type=None):
         if (SHRT_MAX < diag_len):
             raise Exception ("Image size exceeds allow size !!!")
         
-        ch_red = ch_red[y0:y1,x0:x1]*cropped_mask
-        ch_green = ch_green[y0:y1,x0:x1]*cropped_mask
-        ch_blue = ch_blue[y0:y1,x0:x1]*cropped_mask
-        ch_rededge = ch_rededge[y0:y1,x0:x1]*cropped_mask
-        ch_nir = ch_nir[y0:y1,x0:x1]*cropped_mask
+        ch_red_cropped = ch_red[y0:y1,x0:x1]*cropped_mask
+        ch_green_cropped = ch_green[y0:y1,x0:x1]*cropped_mask
+        ch_blue_cropped = ch_blue[y0:y1,x0:x1]*cropped_mask
+        ch_rededge_cropped = ch_rededge[y0:y1,x0:x1]*cropped_mask
+        ch_nir_cropped = ch_nir[y0:y1,x0:x1]*cropped_mask
 
+    ch_red_cropped = (ch_red_cropped - np.min(ch_red_cropped)) / (np.max(ch_red_cropped) - np.min(ch_red_cropped))*255
+    ch_green_cropped = (ch_green_cropped - np.min(ch_green_cropped)) / (np.max(ch_green_cropped) - np.min(ch_green_cropped))*255
+    ch_blue_cropped = (ch_blue_cropped - np.min(ch_blue_cropped)) / (np.max(ch_blue_cropped) - np.min(ch_blue_cropped))*255
+    ch_nir_cropped = (ch_nir_cropped - np.min(ch_nir_cropped)) / (np.max(ch_nir_cropped) - np.min(ch_nir_cropped))*255
+    ch_rededge_cropped = (ch_rededge_cropped - np.min(ch_rededge_cropped)) / (np.max(ch_rededge_cropped) - np.min(ch_rededge_cropped))*255
     ch_red = (ch_red - np.min(ch_red)) / (np.max(ch_red) - np.min(ch_red))*255
     ch_green = (ch_green - np.min(ch_green)) / (np.max(ch_green) - np.min(ch_green))*255
     ch_blue = (ch_blue - np.min(ch_blue)) / (np.max(ch_blue) - np.min(ch_blue))*255
-    ch_nir = (ch_nir - np.min(ch_nir)) / (np.max(ch_nir) - np.min(ch_nir))*255
-    ch_rededge = (ch_rededge - np.min(ch_rededge)) / (np.max(ch_rededge) - np.min(ch_rededge))*255
-    stacked_geotiffs_npy = np.stack([ch_red,ch_green,ch_blue,ch_rededge,ch_nir,cropped_mask],axis = 2)
+
+    stacked_geotiffs_npy = np.stack([ch_red_cropped,ch_green_cropped,ch_blue_cropped,ch_rededge_cropped,ch_nir_cropped,cropped_mask],axis = 2)
+    full_stacked_geotiffs = np.stack([ch_red,ch_green,ch_blue],axis = 2)
     save_test_data_pth = r"/home/stefanovicd/DeepSleep/agrovision/DetekcijaBorovnica/test_data_folder"
     # border_shp = r'/home/stefanovicd/DeepSleep/agrovision/DetekcijaBorovnica/shp/test_parcela_shape.shp'
     preprocessing_block(stacked_geotiffs_npy, cropped_mask, save_test_data_pth)
@@ -487,7 +501,7 @@ def main(input_files_type=None):
     save_final_GeoTiff_pth = r'/home/stefanovicd/DeepSleep/agrovision/DetekcijaBorovnica/final_results_folder'
     save_final_colored_GeoTiff_pth = r'/home/stefanovicd/DeepSleep/agrovision/DetekcijaBorovnica/final_results_folder'
     save_final_shp_pth = r'/home/stefanovicd/DeepSleep/agrovision/DetekcijaBorovnica/final_results_folder'
-    postprocessing_block(stacked_geotiffs_npy,y0,y1,x0,x1,final_mask, geo_transform,wkt_raster_proj,load_pred_data_pth, save_final_GeoTiff_pth, save_final_colored_GeoTiff_pth, save_final_shp_pth)
+    postprocessing_block(stacked_geotiffs_npy,full_stacked_geotiffs,y0,y1,x0,x1,final_mask, geo_transform,wkt_raster_proj,load_pred_data_pth, save_final_GeoTiff_pth, save_final_colored_GeoTiff_pth, save_final_shp_pth)
 
 
 
