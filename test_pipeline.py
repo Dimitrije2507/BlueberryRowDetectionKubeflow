@@ -202,7 +202,7 @@ def test_block(load_data_pth,model_pth,save_pred_pth):
     for sample in samples:
         img = np.load(load_data_pth + "/" + sample)
         img = torch.tensor(img).permute(2,0,1).unsqueeze(0)
-        pred_sample = segmentation_net(img.float())
+        pred_sample = segmentation_net(img.float()/255)
         sigmoid_func = torch.nn.Sigmoid()
         preds_sample2 = sigmoid_func(pred_sample)
         pred_sample_bin = (preds_sample2 > 0.5).byte()
@@ -493,7 +493,9 @@ def main(input_files_type=None):
     save_pred_data_pth = r"/home/stefanovicd/DeepSleep/agrovision/DetekcijaBorovnica/test_pred_folder"
     # model_pth = r"/home/stefanovicd/DeepSleep/agrovision/BorovniceUnetBS/logs/Train_BGFG_BCE_with_weights/0_13_11_2022_01_36_47_lr_1e-05_step_na_5_epoha_lambda_parametar_1_batch_size_4_sched_multiplicative_loss_bce/NN_model_ep_40_Train_BGFG_BCE_with_weights/fully_trained_model_epochs_39_lr_1e-05_step_5_Lambda_parametar_1_loss_type_bce_arhitektura_UNet++_batch_size_4.pt" 
     # model_pth = r"/home/stefanovicd/DeepSleep/BlueberryRowDetectionKubeflow/logs/Train_BGFG_BCE_with_weightsUnet3/0_02_12_2022_11_23_55_lr_1e-05_step_na_5_epoha_lambda_parametar_1_batch_size_4_sched_multiplicative_loss_bce/NN_model_ep_40_Train_BGFG_BCE_with_weightsUnet3/fully_trained_model_epochs_39_lr_1e-05_step_5_Lambda_parametar_1_loss_type_bce_arhitektura_UNet3_batch_size_4.pt"
-    model_pth = r"/home/stefanovicd/DeepSleep/BlueberryRowDetectionKubeflow/logs/Train_BGFG_BCE_with_weightsUnet3/0_02_12_2022_12_25_21_lr_1e-05_step_na_5_epoha_lambda_parametar_1_batch_size_4_sched_multiplicative_loss_bce/NN_model_ep_40_Train_BGFG_BCE_with_weightsUnet3/fully_trained_model_epochs_39_lr_1e-05_step_5_Lambda_parametar_1_loss_type_bce_arhitektura_UNet++_batch_size_4.pt"
+    # model_pth = r"/home/stefanovicd/DeepSleep/BlueberryRowDetectionKubeflow/logs/Train_BGFG_BCE_with_weightsUnet3/0_02_12_2022_12_25_21_lr_1e-05_step_na_5_epoha_lambda_parametar_1_batch_size_4_sched_multiplicative_loss_bce/NN_model_ep_40_Train_BGFG_BCE_with_weightsUnet3/fully_trained_model_epochs_39_lr_1e-05_step_5_Lambda_parametar_1_loss_type_bce_arhitektura_UNet++_batch_size_4.pt"
+    # model_pth = r"logs/Train_BGFG_BCE_with_weightsUnet3/0_30_12_2022_13_41_24_lr_0.001_step_na_5_epoha_lambda_parametar_1_batch_size_4_sched_multiplicative_loss_bce/NN_model_ep_40_Train_BGFG_BCE_with_weightsUnet3/fully_trained_model_epochs_39_lr_0.001_step_5_Lambda_parametar_1_loss_type_bce_arhitektura_UNet++_batch_size_4.pt"
+    model_pth = r"/home/stefanovicd/DeepSleep/agrovision/BorovniceUnetBS/logs/Train_BGFG_BCE_with_weights/0_04_01_2023_10_15_15_lr_1e-05_step_na_5_epoha_lambda_parametar_1_batch_size_4_sched_multiplicative_loss_bce/NN_model_ep_40_Train_BGFG_BCE_with_weights/fully_trained_model_epochs_39_lr_1e-05_step_5_Lambda_parametar_1_loss_type_bce_arhitektura_UNet++_batch_size_4.pt"
     test_block(load_test_data_pth,model_pth,save_pred_data_pth)
     
     load_pred_data_pth = copy.deepcopy(save_pred_data_pth)
