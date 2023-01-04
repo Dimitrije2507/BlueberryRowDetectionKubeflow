@@ -272,7 +272,7 @@ def postprocessing_block(GeoTiff,full_geotiff,y0,y1,x0,x1,final_mask, geotransfo
 
     # final_mask[y0 - row_pad:y_end + row_pad, x_start - column_pad:x_end + column_pad] = copy.deepcopy(image)
     driver = gdal.GetDriverByName('GTiff')
-    tmp_raster = driver.Create('unetpp_test_parcel.tif', final_mask.shape[1], final_mask.shape[0], 1, gdal.GDT_Byte)
+    tmp_raster = driver.Create(os.path.join(save_final_GeoTiff_pth,'unetpp_test_parcel.tif'), final_mask.shape[1], final_mask.shape[0], 1, gdal.GDT_Byte)
     tmp_raster.SetGeoTransform(geotransform)
     tmp_raster.SetProjection(projection)
     srcband = tmp_raster.GetRasterBand(1)
@@ -281,7 +281,7 @@ def postprocessing_block(GeoTiff,full_geotiff,y0,y1,x0,x1,final_mask, geotransfo
     print("Postprocessing block ended")
 
     
-    geotiffff = gdal.GetDriverByName('GTiff').Create('rgb_masked_with_red.tif',final_mask.shape[1], final_mask.shape[0], 3, gdal.GDT_Byte)
+    geotiffff = gdal.GetDriverByName('GTiff').Create(os.path.join(save_final_colored_GeoTiff_pth,'rgb_masked_with_red.tif'),final_mask.shape[1], final_mask.shape[0], 3, gdal.GDT_Byte)
 
     geotiffff.SetGeoTransform(geotransform)    # specify coords
     srs = osr.SpatialReference()            # establish encoding
@@ -300,7 +300,7 @@ def postprocessing_block(GeoTiff,full_geotiff,y0,y1,x0,x1,final_mask, geotransfo
     for i in range(len(ind_list)):
         geometries.append(ogr.Geometry(ogr.wkbMultiPolygon))
 
-    outShapefile = "unetpp_test_parcel_tmp.shp"
+    outShapefile = os.path.join(save_final_shp_pth,"unetpp_test_parcel_tmp.shp")
     outDriver = ogr.GetDriverByName('ESRI Shapefile')
     if os.path.exists(outShapefile):
         outDriver.DeleteDataSource(outShapefile)
@@ -330,7 +330,7 @@ def postprocessing_block(GeoTiff,full_geotiff,y0,y1,x0,x1,final_mask, geotransfo
         union.append(geometries[i].UnionCascaded())
         print(geometries[i].UnionCascaded())
 
-    outShapefile_new = "unetpp_test_parcel.shp"
+    outShapefile_new = os.path.join(save_final_shp_pth,"unetpp_test_parcel.shp")
     outDriver_new = ogr.GetDriverByName('ESRI Shapefile')
     if os.path.exists(outShapefile_new):
         outDriver_new.DeleteDataSource(outShapefile_new)
